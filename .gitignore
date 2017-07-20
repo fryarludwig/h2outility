@@ -1,0 +1,76 @@
+*.py[cod]
+# C extensions
+*.so
+*.log
+*settings.json
+*persist_file*
+*operations_file*
+__pycache__
+htmlcov
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+bin
+var
+sdist
+develop-eggs
+.installed.cfg
+lib64
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+nosetests.xml
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+.project
+.pydevproject
+
+# OSX files
+.DS_Store
+
+# Sublime Text project files
+odm_tools_python.sublime-project
+odm_tools_python.sublime-workspace
+
+# Subversion
+.svn
+
+*.config
+*.exe
+setup/Output/setup.exe
+
+*.log
+.idea
+
+*.uml
+GAMUT_CSV_Files
+
+# ipython
+.ipynb_checkpoints
+*.ipynb
+
+.log
+
+
+*/logs
+*/*/logs/*
+*.csv
+
+src/secret
+src/secret_dev
+src/temporary_metadata*
+src/GAMUT_CSV_Files_old
+src/resourcemetadata.xml
