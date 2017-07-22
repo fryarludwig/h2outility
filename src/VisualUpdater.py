@@ -11,6 +11,7 @@ from GuiComponents.VisualH2OMainWindow import VisualH2OWindow
 from Common import *
 
 if __name__ == "__main__":
+    APP_SETTINGS = Common(sys.argv)
     app = wx.App()
     frame = VisualH2OWindow(None, -1, __title__)
     app.MainLoop()

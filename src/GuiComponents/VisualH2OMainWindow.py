@@ -9,8 +9,10 @@ import wx.grid
 from pubsub import pub
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate, \
     HydroShareResource
+from Common import *
 from Utilities.DatasetUtilities import OdmDatasetConnection, H2OManagedResource
-from Utilities.H2OServices import H2OService, OdmSeriesHelper
+from Utilities.H2OServices import H2OService
+from Utilities.H2OSeries import H2OSeries, OdmSeriesHelper
 from GAMUTRawData.odmservices import ServiceManager
 from EditConnectionsDialog import DatabaseConnectionDialog
 from EditAccountsDialog import HydroShareAccountDialog
@@ -45,7 +47,6 @@ class VisualH2OWindow(wx.Frame):
         supported_notifications = ['logger', 'Dataset_Started', 'Dataset_Generated']
         self.H2OService = H2OService(subscriptions=supported_notifications)
 
-
         self.odm_series_dict = {}  # type: dict[str, Series]
         self.h2o_series_dict = {}  # type: dict[str, H2OSeries]
 
@@ -71,6 +72,11 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.LoadData()
         self.UpdateControls()
 
+        if APP_SETTINGS.H2O_DEBUG:
+            result = HydroShareResourceTemplateDialog(self, self.H2OService.ResourceTemplates,
+                                                      create_selected=True).ShowModal()
+                                                      # create_selected=False).ShowModal()
+
     def _setup_subscriptions(self):
         SUBSCRIPTIONS = [
             (self.OnDeleteResourceTemplate, 'hs_resource_remove'),
@@ -92,7 +98,7 @@ class VisualH2OWindow(wx.Frame):
             pub.subscribe(sub_tuple[0], sub_tuple[1])
 
     def OnPrintLog(self, message=""):
-        if message is None or not isinstance(message, str) or len(message) <= 1:
+        if message is None or len(message) < 4 or message.isspace():
             return
         self.log_message_listbox.Insert('{}: {}'.format(datetime.datetime.now().strftime('%H-%M-%S'), message), 0)
 
@@ -248,6 +254,8 @@ class VisualH2OWindow(wx.Frame):
 
     def SetOdmConnection(self, connection):
         busy = wx.BusyInfo("Loading ODM series from database {}".format(connection.name))
+        self.available_series_grid.Clear()
+        self.selected_series_grid.Clear()
 
         if connection.VerifyConnection():
             self.h2o_series_dict.clear()
@@ -258,7 +266,7 @@ class VisualH2OWindow(wx.Frame):
             for series in series_list:
                 self.h2o_series_dict[series.id] = OdmSeriesHelper.CreateH2OSeriesFromOdmSeries(series)
                 self.odm_series_dict[series.id] = series
-            self.UpdateSeriesInGrid()
+            self.ResetSeriesInGrid()
         else:
             self.OnPrintLog('Unable to authenticate using connection {}'.format(connection.name))
 
@@ -270,7 +278,7 @@ class VisualH2OWindow(wx.Frame):
         if event.GetSelection() > 0:
             selection_string = self.database_connection_choice.GetStringSelection()
             self.SetOdmConnection(self.H2OService.DatabaseConnections[selection_string])
-            self.UpdateSeriesInGrid()
+            self.ResetSeriesInGrid()
         else:
             print "No selection made"
 
@@ -281,7 +289,7 @@ class VisualH2OWindow(wx.Frame):
             self.SetHydroShareConnection(self.hydroshare_account_choice.GetStringSelection())
         self._update_target_choices()
 
-    def UpdateSeriesInGrid(self, event=None):
+    def ResetSeriesInGrid(self, event=None):
         if self.odm_series_dict is None or len(self.odm_series_dict) == 0:
             self.remove_selected_button.Disable()
             self.add_to_selected_button.Disable()
@@ -451,7 +459,6 @@ class VisualH2OWindow(wx.Frame):
                     temp = resource
                     self.H2OService.ActiveHydroshare.getMetadataForResource(temp)
                     self.FillResourceFields(temp)
-                    self.UpdateSeriesInGrid()
                     return
 
             self.FillResourceFields(resource.resource)
@@ -465,6 +472,7 @@ class VisualH2OWindow(wx.Frame):
                     self.OnPrintLog('Error loading ODM series: Unknown connection {}'.format(resource.odm_db_name))
                     return
 
+            self.ResetSeriesInGrid()
             matches = self._get_current_series_ids_from_resource(resource)
             for series in self.odm_series_dict.itervalues():
                 if series.id in matches:

@@ -12,6 +12,7 @@ import sys
 import json
 from Utilities.DatasetUtilities import *
 from Utilities.H2OServices import *
+from Common import *
 from pubsub import pub
 
 
@@ -21,6 +22,7 @@ DIR_SYMBOL = '\\' if WINDOWS_OS else '/'
 PROJECT_DIR = '{}'.format(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(os.path.dirname(PROJECT_DIR))
 
+from Common import *
 from GAMUTRawData.CSVDataFileGenerator import *
 from exceptions import IOError
 from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException
@@ -92,3 +94,10 @@ if __name__ == "__main__":
     service = H2OService()
     service.LoadData()
     service.GenerateDatasetFiles(blocking=True)
+
+    # active_hs_account = 'None'
+    # for managed_resource in service.ManagedResources.values():
+    #     if managed_resource.hs_account_name != active_hs_account:
+    #         service.ActiveHydroshare =
+
+    print service.ActiveHydroshare.getAllResources()

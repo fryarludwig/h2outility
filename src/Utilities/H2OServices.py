@@ -14,161 +14,16 @@ from exceptions import IOError
 
 from GAMUTRawData.odmservices import ServiceManager
 from GAMUTRawData.odmdata import Series
-# from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection
+from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection
 from HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate
+from H2OSeries import H2OSeries
 
 from GAMUTRawData.CSVDataFileGenerator import *
 from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException
+from H2OSeries import H2OSeries, OdmSeriesHelper
 from Common import *
 
-use_debug_file_naming_conventions = True
-
 __title__ = 'H2O Service'
-
-
-class H2OLogger:
-    def __init__(self, logfile_dir=APP_SETTINGS.LOGFILE_DIR, log_to_gui=False):
-        self.log_to_gui = log_to_gui
-        self.terminal = sys.stdout
-        if use_debug_file_naming_conventions:
-            file_name = '{}/H2O_Log_{}.csv'.format(logfile_dir, 'TestFile')
-        else:
-            file_name = '{}/H2O_Log_{}.csv'.format(logfile_dir, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-        self.LogFile = open(file_name, mode='w')
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.LogFile.write(message)
-        # if self.log_to_gui:
-        #     pub.sendMessage('logger', message='H2OService: ' + str(message))
-
-
-class OdmSeriesHelper:
-    RE_STRING_PARSER = re.compile(r'^(?P<SiteCode>\w+) +(?P<VariableCode>\S+) +QC (?P<QualityControlLevelCode>\S+) +'
-                                  r'(?P<SourceID>[\d.]+) +(?P<MethodID>[\d.]+)$', re.I)
-    RE_RESOURCE_PARSER = re.compile(r'^(?P<title>.+?)\s+\(ID (?P<id>\w+)\)$', re.I)
-    MATCH_ON_ATTRIBUTE = {
-        'Site': lambda first_series, second_series: first_series.SiteCode == second_series.SiteCode,
-        'Variable': lambda first_series, second_series: first_series.VariableCode == second_series.VariableCode,
-        'QC Code': lambda first_series, second_series: first_series.QualityControlLevelCode ==
-                                                       second_series.QualityControlLevelCode,
-        'Source': lambda first_series, second_series: first_series.SourceID == second_series.SourceID,
-        'Method': lambda first_series, second_series: first_series.MethodID == second_series.MethodID
-    }
-    FORMAT_STRING = '{:<22} {:<27} QC {:<7} {:<5} {}'
-
-    @staticmethod
-    def SeriesToString(series):
-        format_string = OdmSeriesHelper.FORMAT_STRING
-        if isinstance(series, H2OSeries):
-            return format_string.format(series.SiteCode, series.VariableCode, series.QualityControlLevelCode,
-                                           series.SourceID, series.MethodID)
-        elif isinstance(series, Series):
-            return format_string.format(series.site_code, series.variable_code, series.quality_control_level_code,
-                                        series.source_id, series.method_id)
-        return 'Unable to create string from object type {}'.format(type(series))
-
-
-    @staticmethod
-    def OdmSeriesToString(series):
-        if series is not None:
-            return str(OdmSeriesHelper.CreateH2OSeriesFromOdmSeries(series))
-        else:
-            return "A series cannot be type (None)"
-
-    @staticmethod
-    def CreateH2OSeriesFromOdmSeries(series):
-        """
-        :type series: Series
-        """
-        return H2OSeries(SeriesID=series.id, SiteID=series.site_id, VariableID=series.variable_id,
-                         MethodID=series.method_id, SourceID=series.source_id, VariableCode=series.variable_code,
-                         QualityControlLevelID=series.quality_control_level_id, SiteCode=series.site_code,
-                         QualityControlLevelCode=series.quality_control_level_code)
-
-    @staticmethod
-    def HashOdmSeriesObject(series):
-        """
-        :type series: Series
-        """
-        return hash(str(series))
-
-    @staticmethod
-    def PopulateH2OSeriesFromString(series_string):
-        regex_results = OdmSeriesHelper.RE_STRING_PARSER.match(series_string)
-        if regex_results is not None:
-            return H2OSeries(**regex_results.groupdict())
-        else:
-            return None
-
-
-class CsvFileHelper:
-    test_var = "Nothing"
-
-    @staticmethod
-    def DetermineForcedSeriesChunking(series_list):
-        """
-
-        :type series_list: list[H2OSeries]
-        """
-        csv_files = {}
-        for series in series_list:
-            series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)
-            if series_tuple not in csv_files.keys():
-                csv_files[series_tuple] = []
-            csv_files[series_tuple].append(series)
-        return csv_files
-
-    @staticmethod
-    def createFile(filepath):
-        try:
-            print 'Creating new file {}'.format(filepath)
-            return open(filepath, 'w')
-        except Exception as e:
-            print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
-            return None
-
-class H2OSeries:
-    def __init__(self, SeriesID=None, SiteID=None, SiteCode=None, VariableID=None, VariableCode=None, MethodID=None,
-                 SourceID=None, QualityControlLevelID=None, QualityControlLevelCode=None):
-        self.SeriesID = SeriesID if SeriesID is not None else -1  # type: int
-        self.SiteID = SiteID if SiteID is not None else -1  # type: int
-        self.SiteCode = SiteCode if SiteCode is not None else ""  # type: str
-        self.VariableID = VariableID if VariableID is not None else -1  # type: int
-        self.VariableCode = VariableCode if VariableCode is not None else ""  # type: str
-        self.MethodID = MethodID if MethodID is not None else -1  # type: int
-        self.SourceID = SourceID if SourceID is not None else -1  # type: int
-        self.QualityControlLevelID = QualityControlLevelID if QualityControlLevelID is not None else -1  # type: int
-        self.QualityControlLevelCode = QualityControlLevelCode if QualityControlLevelCode is not None else -1  # type: float
-
-    def __hash__(self):
-        return hash((self.SiteCode, self.VariableCode, self.MethodID, self.SourceID, self.QualityControlLevelCode))
-
-    def __str__(self):
-        return OdmSeriesHelper.SeriesToString(self)
-
-    def __eq__(self, other):
-        if isinstance(other, str):
-            return str(self) == str(other)
-        else:
-            comp_tuple = (self.SiteCode, self.VariableCode, self.MethodID, self.SourceID, self.QualityControlLevelCode)
-            other_tuple = None
-            if isinstance(other, H2OSeries):
-                other_tuple = (other.SiteCode, other.VariableCode, other.MethodID, other.SourceID,
-                               other.QualityControlLevelCode)
-            elif isinstance(other, Series):
-                other_tuple = (other.site_code, other.variable_code, other.method_id, other.source_id,
-                               other.quality_control_level_code)
-            elif isinstance(other, dict):
-                other_tuple = (other.get('SiteCode', None), other.get('VariableCode', None),
-                               other.get('MethodID', None), other.get('SourceID', None),
-                               other.get('QualityControlLevelCode', None))
-            if other_tuple is None:
-                print('Object types are not similar enough to match anything. "other" was type {}'.format(type(other)))
-            return comp_tuple == other_tuple
-
-    def __ne__(self, other):
-        return not (self == other)
 
 
 class H2OService:
@@ -192,7 +47,6 @@ class H2OService:
 
         self.ThreadedFunction = None  # type: Thread
         self.ThreadKiller = ['Continue']
-
 
         self.ActiveHydroshare = None  # type: HydroShareUtility
 
@@ -235,7 +89,7 @@ class H2OService:
             else:
                 csv_str = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}.csv'.format(APP_SETTINGS.DATASET_DIR, site_code,
                                                                                source_id, qc_id)
-            file_out = CsvFileHelper.createFile(csv_str)
+            file_out = OdmSeriesHelper.createFile(csv_str)
             if file_out is None:
                 print('Unable to create output file for {}'.format(managed_resource.name))
 
@@ -246,6 +100,7 @@ class H2OService:
 
             # Generate header for the CSV file
 
+            # Write data to CSV file
             csv_table.to_csv(file_out)
             file_out.close()
         else:
@@ -262,7 +117,7 @@ class H2OService:
                 else:
                     csv_str = '{}ODM_Series_{}_at_{}_Source_{}_QC_Code_{}.csv'.format(APP_SETTINGS.DATASET_DIR, series.VariableCode,
                                                                                       series.SiteCode, source_id, qc_id)
-                file_out = CsvFileHelper.createFile(csv_str)
+                file_out = OdmSeriesHelper.createFile(csv_str)
                 if file_out is None:
                     print('Unable to create output file for {}'.format(managed_resource.name))
 
@@ -286,6 +141,8 @@ class H2OService:
 
                 # Generate headers for each CSV file
 
+                # Write data to CSV file
+
                 csv_table.to_csv(file_out)
                 file_out.close()
 
@@ -305,7 +162,7 @@ class H2OService:
                 current_dataset += 1
                 self.NotifyVisualH2O('Dataset_Started', resource.resource.title, current_dataset, dataset_count)
 
-                chunks = CsvFileHelper.DetermineForcedSeriesChunking(resource.odm_series)
+                chunks = OdmSeriesHelper.DetermineForcedSeriesChunking(resource.odm_series)
 
                 for csv_file, series_list in chunks.iteritems():
                     self._thread_checkpoint()
@@ -382,7 +239,9 @@ class H2OService:
                 'resource_templates': self.ResourceTemplates,
                 'managed_resources': self.ManagedResources}
 
-    def SaveData(self, output_file=APP_SETTINGS.SETTINGS_FILE_NAME):
+    def SaveData(self, output_file=None):
+        if output_file is None:
+            output_file = APP_SETTINGS.SETTINGS_FILE_NAME
         try:
             json_out = open(output_file, 'w')
             json_out.write(jsonpickle.encode(self.to_json()))
@@ -393,7 +252,9 @@ class H2OService:
             print 'Error saving to disk - file name {}\n{}'.format(output_file, e)
             return False
 
-    def LoadData(self, input_file=APP_SETTINGS.SETTINGS_FILE_NAME):
+    def LoadData(self, input_file=None):
+        if input_file is None:
+            input_file = APP_SETTINGS.SETTINGS_FILE_NAME
         try:
             json_in = open(input_file, 'r')
             data = jsonpickle.decode(json_in.read())
@@ -402,7 +263,6 @@ class H2OService:
                 self.DatabaseConnections = data['odm_connections'] if 'odm_connections' in data else {}
                 self.ResourceTemplates = data['resource_templates'] if 'resource_templates' in data else {}
                 self.ManagedResources = data['managed_resources'] if 'managed_resources' in data else {}
-
             json_in.close()
             print('Dataset information loaded from {}'.format(input_file))
             return True
@@ -414,7 +274,7 @@ class H2OService:
         """
         :type template: ResourceTemplate
         """
-        print 'Craeating reasource {}'.format(template)
+        print 'Creating reasource {}'.format(template)
         pass
 
     def _initialize_directories(self, directory_list):
@@ -422,13 +282,13 @@ class H2OService:
             if not os.path.exists(dir_name):
                 os.makedirs(dir_name)
 
-    def GetValidHydroShareConnections(self):
-        valid_hydroshare_connections = {}
-        for name, account in self.HydroShareConnections.iteritems():
-            hydroshare = HydroShareUtility()
-            if hydroshare.authenticate(**account.to_dict()):
-                valid_hydroshare_connections[name] = account
-        return valid_hydroshare_connections
+    # def GetValidHydroShareConnections(self):
+    #     valid_hydroshare_connections = {}
+    #     for name, account in self.HydroShareConnections.iteritems():
+    #         hydroshare = HydroShareUtility()
+    #         if hydroshare.authenticate(**account.to_dict()):
+    #             valid_hydroshare_connections[name] = account
+    #     return valid_hydroshare_connections
 
     def GetValidOdmConnections(self):
         valid_odm_connections = {}
@@ -439,3 +299,23 @@ class H2OService:
 
     def _thread_checkpoint(self):
         return self.ThreadKiller[0] == 'Continue'
+
+
+class H2OLogger:
+    def __init__(self, logfile_dir=None, log_to_gui=False):
+        if logfile_dir is None:
+            logfile_dir = APP_SETTINGS.LOGFILE_DIR
+        self.log_to_gui = log_to_gui
+        self.terminal = sys.stdout
+        if APP_SETTINGS.H2O_DEBUG:
+            file_name = '{}/H2O_Log_{}.csv'.format(logfile_dir, 'TestFile')
+        else:
+            file_name = '{}/H2O_Log_{}.csv'.format(logfile_dir, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+        self.LogFile = open(file_name, mode='w')
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.LogFile.write(message)
+        if APP_SETTINGS.H2O_DEBUG and not (message is None or len(message) <= 0 or message.isspace()):
+            pub.sendMessage('logger', message='H2OService: ' + str(message))
+

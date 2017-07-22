@@ -12,183 +12,196 @@ from InputValidator import *
 
 
 class HydroShareResourceTemplateDialog(wx.Dialog):
-    def __init__( self, parent, templates, selected=0, create_selected=False):
-        wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=u"HydroShare Resource Templates", pos=wx.DefaultPosition, size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
+    def __init__(self, parent, templates, selected=0, create_selected=False):
+        title = u'Create a new HydroShare Resource' if create_selected else u"Manage HydroShare Resource Templates"
+        wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=title, pos=wx.DefaultPosition,
+                           size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
         self.templates = templates
-
         self.create_new = create_selected
         self.SetSizeHints(wx.DefaultSize, wx.DefaultSize)
-        bSizer1 = wx.BoxSizer(wx.VERTICAL)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        label_size = wx.Size(125, -1)
+        input_size = wx.Size(300, -1)
 
-        template_selector_sizer = wx.GridBagSizer(7, 7)
-        template_selector_sizer.SetFlexibleDirection(wx.BOTH)
-        template_selector_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
-
+        ###########################################################################
+        #  Template Selection
+        ###########################################################################
         template_text = u'Modify Template' if not create_selected else u'Load saved template'
-        self.label1 = wx.StaticText(self, wx.ID_ANY, template_text, wx.DefaultPosition, wx.Size(65, -1), 0)
+        self.label1 = wx.StaticText(self, wx.ID_ANY, template_text, wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
         self.label1.Wrap(-1)
-        template_selector_sizer.Add(self.label1, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL | wx.EXPAND, 7)
+        self.label1.SetMinSize(label_size)
 
-        template_selector_comboChoices = ['Add new...'] + templates.keys() if not create_selected else templates.keys()
-        self.template_selector_combo = wx.Choice(self, wx.ID_ANY, wx.DefaultPosition, wx.Size(250, -1), template_selector_comboChoices, 0)
-        template_selector_sizer.Add(self.template_selector_combo, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALL | wx.EXPAND, 5)
+        default_item = u'Populate fields from template...' if create_selected else u'Create new template...'
+        template_choices = [default_item] + templates.keys()
+        self.template_selector = wx.Choice(self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, template_choices, 0)
 
-        template_selector_sizer.AddGrowableCol(1)
-        bSizer1.Add(template_selector_sizer)
+        self.template_selector.SetMinSize(input_size)
 
+        template_selector_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        template_selector_sizer.Add(self.label1, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        template_selector_sizer.Add(self.template_selector, 0, wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(template_selector_sizer, flag=wx.ALL | wx.EXPAND, border=5)
+
+        ###########################################################################
+        #  Template name input (optional)
+        ###########################################################################
         if not create_selected:
-            bSizer2 = wx.BoxSizer(wx.HORIZONTAL)
-            self.m_staticText1 = wx.StaticText(self, wx.ID_ANY, u"Template Name", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+            template_name_sizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.m_staticText1 = wx.StaticText(self, wx.ID_ANY, u"Template Name", wx.DefaultPosition, wx.DefaultSize,
+                                               wx.ALIGN_CENTRE)
             self.m_staticText1.Wrap(-1)
-            self.m_staticText1.SetMinSize(wx.Size(100, -1))
-            bSizer2.Add(self.m_staticText1, 0, wx.ALL, 7)
-            self.template_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
-            self.template_name_input.SetMinSize(wx.Size(250, -1))
-            bSizer2.Add(self.template_name_input, 0, wx.ALL | wx.EXPAND, 5)
-            bSizer1.Add(bSizer2, flag=wx.ALL | wx.EXPAND, border=5)
+            self.m_staticText1.SetMinSize(label_size)
+            template_name_sizer.Add(self.m_staticText1, 0, flag=wx.ALL | wx.EXPAND, border=5)
+            self.template_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize,
+                                                   0)
+            self.template_name_input.SetMinSize(input_size)
+            template_name_sizer.Add(self.template_name_input, 0, wx.ALL | wx.EXPAND, border=5)
+            main_sizer.Add(template_name_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
-        bSizer21 = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.m_staticText11 = wx.StaticText(self, wx.ID_ANY, u"Resource Name", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+        ###########################################################################
+        #  Resource name input
+        ###########################################################################
+        self.m_staticText11 = wx.StaticText(self, wx.ID_ANY, u"Resource Name", wx.DefaultPosition, wx.DefaultSize,
+                                            wx.ALIGN_CENTRE)
         self.m_staticText11.Wrap(-1)
-        self.m_staticText11.SetMinSize(wx.Size(100, -1))
-
-        bSizer21.Add(self.m_staticText11, 0, wx.ALL, 7)
+        self.m_staticText11.SetMinSize(label_size)
 
         self.resource_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
-        self.resource_name_input.SetMinSize(wx.Size(250, -1))
+        self.resource_name_input.SetMinSize(input_size)
 
-        bSizer21.Add(self.resource_name_input, 0, wx.ALL, 5)
+        name_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        name_sizer.Add(self.m_staticText11,  0, flag=wx.ALL | wx.EXPAND, border=5)
+        name_sizer.Add(self.resource_name_input,  0, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(name_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
-        bSizer1.Add(bSizer21, flag=wx.ALL | wx.EXPAND, border=5)
-
-        bSizer22 = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.m_staticText12 = wx.StaticText(self, wx.ID_ANY, u"Resource Abstract", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+        ###########################################################################
+        #  Resource Abstract input 
+        ###########################################################################
+        self.m_staticText12 = wx.StaticText(self, wx.ID_ANY, u"Resource Abstract", wx.DefaultPosition, wx.DefaultSize,
+                                            wx.ALIGN_CENTRE)
         self.m_staticText12.Wrap(-1)
-        self.m_staticText12.SetMinSize(wx.Size(100, -1))
+        self.m_staticText12.SetMinSize(label_size)
 
-        bSizer22.Add(self.m_staticText12, 0, wx.ALL, 7)
+        self.resource_abstract_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize,
+                                                   wx.TE_MULTILINE)
+        self.resource_abstract_input.SetMinSize(wx.Size(300, 75))
+        abstract_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        abstract_sizer.Add(self.m_staticText12, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        abstract_sizer.Add(self.resource_abstract_input, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(abstract_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
-        self.resource_abstract_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, wx.TE_MULTILINE)
-        self.resource_abstract_input.SetMinSize(wx.Size(250, 75))
-
-        bSizer22.Add(self.resource_abstract_input, 0, wx.ALL, 5)
-
-        bSizer1.Add(bSizer22, flag=wx.ALL | wx.EXPAND, border=5)
-
-        bSizer23 = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.m_staticText13 = wx.StaticText(self, wx.ID_ANY, u"Funding Agency", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+        ###########################################################################
+        #  Funding agency input 
+        ###########################################################################
+        self.m_staticText13 = wx.StaticText(self, wx.ID_ANY, u"Funding Agency", wx.DefaultPosition, wx.DefaultSize,
+                                            wx.ALIGN_CENTRE)
         self.m_staticText13.Wrap(-1)
-        self.m_staticText13.SetMinSize(wx.Size(100, -1))
-
-        bSizer23.Add(self.m_staticText13, 0, wx.ALL, 7)
-
+        self.m_staticText13.SetMinSize(label_size)
         self.funding_agency_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
-        self.funding_agency_input.SetMinSize(wx.Size(250, -1))
+        self.funding_agency_input.SetMinSize(input_size)
+        funding_agency_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        funding_agency_sizer.Add(self.m_staticText13, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        funding_agency_sizer.Add(self.funding_agency_input, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(funding_agency_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
-        bSizer23.Add(self.funding_agency_input, 0, wx.ALL, 5)
-
-        bSizer1.Add(bSizer23, flag=wx.ALL | wx.EXPAND, border=5)
-
-        bSizer24 = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.m_staticText14 = wx.StaticText(self, wx.ID_ANY, u"Agency Website", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+        ###########################################################################
+        #  Agency URL input 
+        ###########################################################################
+        self.m_staticText14 = wx.StaticText(self, wx.ID_ANY, u"Agency Website", wx.DefaultPosition, wx.DefaultSize,
+                                            wx.ALIGN_CENTRE)
         self.m_staticText14.Wrap(-1)
-        self.m_staticText14.SetMinSize(wx.Size(100, -1))
-
-        bSizer24.Add(self.m_staticText14, 0, wx.ALL, 7)
+        self.m_staticText14.SetMinSize(label_size)
 
         self.agency_url_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
-        self.agency_url_input.SetMinSize(wx.Size(250, -1))
+        self.agency_url_input.SetMinSize(input_size)
 
-        bSizer24.Add(self.agency_url_input, 0, wx.ALL, 5)
+        agency_url_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        agency_url_sizer.Add(self.m_staticText14, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        agency_url_sizer.Add(self.agency_url_input, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(agency_url_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
-        bSizer1.Add(bSizer24, flag=wx.ALL | wx.EXPAND, border=5)
-
-        bSizer25 = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.m_staticText15 = wx.StaticText(self, wx.ID_ANY, u"Award Title", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+        ###########################################################################
+        #  Award title input 
+        ###########################################################################
+        self.m_staticText15 = wx.StaticText(self, wx.ID_ANY, u"Award Title", wx.DefaultPosition, wx.DefaultSize,
+                                            wx.ALIGN_CENTRE)
         self.m_staticText15.Wrap(-1)
-        self.m_staticText15.SetMinSize(wx.Size(100, -1))
-
-        bSizer25.Add(self.m_staticText15, 0, wx.ALL, 7)
+        self.m_staticText15.SetMinSize(label_size)
 
         self.award_title_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
-        self.award_title_input.SetMinSize(wx.Size(250, -1))
+        self.award_title_input.SetMinSize(input_size)
 
-        bSizer25.Add(self.award_title_input, 0, wx.ALL, 5)
+        award_title_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        award_title_sizer.Add(self.m_staticText15, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        award_title_sizer.Add(self.award_title_input, 0, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(award_title_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
-        bSizer1.Add(bSizer25, flag=wx.ALL | wx.EXPAND, border=5)
-
-        bSizer26 = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.m_staticText16 = wx.StaticText(self, wx.ID_ANY, u"Award Number", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+        ###########################################################################
+        #  Award number input 
+        ###########################################################################
+        self.m_staticText16 = wx.StaticText(self, wx.ID_ANY, u"Award Number", wx.DefaultPosition, wx.DefaultSize,
+                                            wx.ALIGN_CENTRE)
         self.m_staticText16.Wrap(-1)
-        self.m_staticText16.SetMinSize(wx.Size(100, -1))
-
-        bSizer26.Add(self.m_staticText16, flag=wx.ALL | wx.EXPAND, border=5)
+        self.m_staticText16.SetMinSize(label_size)
 
         self.award_number_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
-        self.award_number_input.SetMinSize(wx.Size(250, -1))
+        self.award_number_input.SetMinSize(input_size)
 
-        bSizer26.Add(self.award_number_input, flag=wx.ALL | wx.EXPAND, border=5)
-
-        bSizer1.Add(bSizer26, flag=wx.ALL | wx.EXPAND, border=5)
+        award_number_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        award_number_sizer.Add(self.m_staticText16, flag=wx.ALL | wx.EXPAND, border=5)
+        award_number_sizer.Add(self.award_number_input, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(award_number_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
         bSizer211 = wx.BoxSizer(wx.VERTICAL)
-
         bSizer20 = wx.BoxSizer(wx.HORIZONTAL)
-
-        bSizer211.Add(bSizer20, 1, wx.EXPAND, 5)
-
+        bSizer211.Add(bSizer20, 1, wx.EXPAND, border=5)
         bSizer201 = wx.BoxSizer(wx.HORIZONTAL)
+        bSizer211.Add(bSizer201, 1, wx.EXPAND, border=5)
+        main_sizer.Add(bSizer211, flag=wx.ALL | wx.EXPAND, border=5)
 
-        bSizer211.Add(bSizer201, 1, wx.EXPAND, 5)
-
-        bSizer1.Add(bSizer211, flag=wx.ALL | wx.EXPAND, border=5)
-
-        bSizer2111 = wx.BoxSizer(wx.HORIZONTAL)
+        ###########################################################################
+        #  Action buttons
+        ###########################################################################
+        buttons_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         if create_selected:
             self.cancel_button = wx.Button(self, wx.ID_ANY, u"Cancel", wx.DefaultPosition, wx.DefaultSize, 0)
-            bSizer2111.Add(self.cancel_button, 0, wx.ALL, 5)
-
             self.save_button = wx.Button(self, wx.ID_ANY, u"Create Resource", wx.DefaultPosition, wx.DefaultSize, 0)
-            bSizer2111.Add(self.save_button, 0, wx.ALL, 5)
+            buttons_sizer.Add(self.cancel_button, 0, flag=wx.ALL | wx.EXPAND, border=5)
+            buttons_sizer.Add(self.save_button, 0, flag=wx.ALL | wx.EXPAND, border=5)
 
             # Connect Events
             self.cancel_button.Bind(wx.EVT_BUTTON, self.on_cancel_clicked)
             self.save_button.Bind(wx.EVT_BUTTON, self.on_create_clicked)
         else:
             self.cancel_button = wx.Button(self, wx.ID_ANY, u"Cancel", wx.DefaultPosition, wx.DefaultSize, 0)
-            bSizer2111.Add(self.cancel_button, 0, wx.ALL, 5)
-
             self.delete_button = wx.Button(self, wx.ID_ANY, u"Delete Template", wx.DefaultPosition, wx.DefaultSize, 0)
-            bSizer2111.Add(self.delete_button, 0, wx.ALL, 5)
-
             self.copy_button = wx.Button(self, wx.ID_ANY, u"Copy Template", wx.DefaultPosition, wx.DefaultSize, 0)
-            bSizer2111.Add(self.copy_button, 0, wx.ALL, 5)
-
             self.save_button = wx.Button(self, wx.ID_ANY, u"Save Template", wx.DefaultPosition, wx.DefaultSize, 0)
-            bSizer2111.Add(self.save_button, 0, wx.ALL, 5)
+
+            buttons_sizer.Add(self.cancel_button, 0, flag=wx.ALL | wx.EXPAND, border=5)
+            buttons_sizer.Add(self.delete_button, 0, flag=wx.ALL | wx.EXPAND, border=5)
+            buttons_sizer.Add(self.copy_button, 0, flag=wx.ALL | wx.EXPAND, border=5)
+            buttons_sizer.Add(self.save_button, 0, flag=wx.ALL | wx.EXPAND, border=5)
+
             # Connect Events
             self.cancel_button.Bind(wx.EVT_BUTTON, self.on_cancel_clicked)
             self.save_button.Bind(wx.EVT_BUTTON, self.on_save_clicked)
-            self.template_selector_combo.Bind(wx.EVT_CHOICE, self.on_selection_changed)
             self.delete_button.Bind(wx.EVT_BUTTON, self.on_delete_clicked)
             self.copy_button.Bind(wx.EVT_BUTTON, self.on_copy_clicked)
 
-        bSizer1.Add(bSizer2111, flag=wx.ALL | wx.EXPAND, border=5)
+        self.template_selector.Bind(wx.EVT_CHOICE, self.on_selection_changed)
+        main_sizer.Add(buttons_sizer, flag=wx.ALL | wx.ALIGN_RIGHT, border=5)
 
-        self.SetSizerAndFit(bSizer1)
+        ###########################################################################
+        #  Finish off the rest
+        ###########################################################################
+        self.SetSizerAndFit(main_sizer)
         self.Layout()
 
         self.Centre(wx.BOTH)
-
-
-        self.template_selector_combo.SetSelection(selected)
+        self.template_selector.SetSelection(selected)
         self.on_selection_changed()
 
     def __del__(self):
@@ -200,15 +213,15 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
     def on_delete_clicked(self, event):
         print "remove account clicked!"
         pub.sendMessage("hs_resource_remove", result=self._get_input_as_dict())
-        selected = self.template_selector_combo.GetCurrentSelection()
+        selected = self.template_selector.GetCurrentSelection()
         if selected > 0:
             pub.sendMessage("hs_auth_remove", result=self._get_input_as_dict())
-            self.template_selector_combo.SetSelection(selected - 1)
-            self.template_selector_combo.Delete(selected)
+            self.template_selector.SetSelection(selected - 1)
+            self.template_selector.Delete(selected)
             self.on_selection_changed()
 
     def on_copy_clicked(self, event):
-        self.template_selector_combo.SetSelection(0)
+        self.template_selector.SetSelection(0)
         counter = 1
         new_name = "{}_({})".format(self.template_name_input.Value, counter)
         while new_name in self.templates and counter < 10:
@@ -227,7 +240,7 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         event.Skip()
 
     def on_selection_changed(self, event=None):
-        value = self.template_selector_combo.GetStringSelection()
+        value = self.template_selector.GetStringSelection()
         if value in self.templates:
             template = self.templates[value]
             if not self.create_new:
@@ -249,7 +262,7 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
             self.agency_url_input.SetValue("")
 
     def _get_input_as_dict(self):
-        return dict(selector=self.template_selector_combo.GetStringSelection(),
+        return dict(selector=self.template_selector.GetStringSelection(),
                     name=self.template_name_input.Value if not self.create_new else '',
                     resource_name=self.resource_name_input.Value, abstract=self.resource_abstract_input.Value,
                     funding_agency=self.funding_agency_input.Value, agency_url=self.agency_url_input.Value,
