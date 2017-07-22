@@ -229,14 +229,14 @@ class HydroShareUtility:
             return []
 
     def getAllResources(self):
-        filtered_resources = []
+        filtered_resources = {}
         owner = self.user_info['username']
         if self.auth is None:
             raise HydroShareUtilityException("Cannot query resources without authentication")
         all_resources = self.client.resources(owner=owner)
         for resource in all_resources:
             resource_object = HydroShareResource(resource)
-            filtered_resources.append(resource_object)
+            filtered_resources[resource_object.id] = resource_object
         return filtered_resources
 
     def getMetadataForResource(self, resource):

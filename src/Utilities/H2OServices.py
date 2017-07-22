@@ -4,56 +4,30 @@ import re
 import smtplib
 import sys
 import json
-# from Utilities.DatasetGenerator import *
 from pubsub import pub
 import time
 import wx
 import pandas
 
 from threading import Thread
+from exceptions import IOError
 
 from GAMUTRawData.odmservices import ServiceManager
 from GAMUTRawData.odmdata import Series
-from Utilities.DatasetUtilities import OdmDatasetConnection, H2ODataset
-from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate
-# from Utilities.Odm2Wrapper import *
+# from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection
+from HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate
 
 from GAMUTRawData.CSVDataFileGenerator import *
-# from Utilities.DatasetGenerator import *
-from exceptions import IOError
 from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException
-
-__title__ = 'H2O Service'
-WINDOWS_OS = 'nt' in os.name
-DIR_SYMBOL = '\\' if WINDOWS_OS else '/'
-PROJECT_DIR = '{}'.format(os.path.dirname(os.path.realpath(__file__)))
-sys.path.append(os.path.dirname(PROJECT_DIR))
+from Common import *
 
 use_debug_file_naming_conventions = True
 
-
-class H2ODefaults:
-    SETTINGS_FILE_NAME = './operations_file.json'.format()
-    PROJECT_DIR = '{}'.format(os.path.dirname(os.path.realpath(__file__)))
-    DATASET_DIR = '{}/H2O_dataset_files/'.format(PROJECT_DIR)
-    LOGFILE_DIR = '{}/../logs/'.format(PROJECT_DIR)
-    SERIES_COLUMN_NAME = lambda series: '{} & {} & QC {}'.format(series.site_code, series.variable_code,
-                                                                 series.quality_control_level_code)
-    CSV_COLUMNS = ["LocalDateTime", "UTCOffset", "DateTimeUTC"]
-    
-    GUI_PUBLICATIONS = {
-        'logger': lambda message: {'message': message},
-        'Dataset_Started': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
-        'Dataset_Generated': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource}
-    }
-
-
-class CSV_DEFAULTS:
-    DEFAULT_COLS = ['LocalDateTime', 'UTCOffset', 'DateTimeUTC']
+__title__ = 'H2O Service'
 
 
 class H2OLogger:
-    def __init__(self, logfile_dir=H2ODefaults.LOGFILE_DIR, log_to_gui=False):
+    def __init__(self, logfile_dir=APP_SETTINGS.LOGFILE_DIR, log_to_gui=False):
         self.log_to_gui = log_to_gui
         self.terminal = sys.stdout
         if use_debug_file_naming_conventions:
@@ -72,6 +46,7 @@ class H2OLogger:
 class OdmSeriesHelper:
     RE_STRING_PARSER = re.compile(r'^(?P<SiteCode>\w+) +(?P<VariableCode>\S+) +QC (?P<QualityControlLevelCode>\S+) +'
                                   r'(?P<SourceID>[\d.]+) +(?P<MethodID>[\d.]+)$', re.I)
+    RE_RESOURCE_PARSER = re.compile(r'^(?P<title>.+?)\s+\(ID (?P<id>\w+)\)$', re.I)
     MATCH_ON_ATTRIBUTE = {
         'Site': lambda first_series, second_series: first_series.SiteCode == second_series.SiteCode,
         'Variable': lambda first_series, second_series: first_series.VariableCode == second_series.VariableCode,
@@ -85,7 +60,7 @@ class OdmSeriesHelper:
     @staticmethod
     def SeriesToString(series):
         format_string = OdmSeriesHelper.FORMAT_STRING
-        if isinstance(series, H20Series):
+        if isinstance(series, H2OSeries):
             return format_string.format(series.SiteCode, series.VariableCode, series.QualityControlLevelCode,
                                            series.SourceID, series.MethodID)
         elif isinstance(series, Series):
@@ -106,7 +81,7 @@ class OdmSeriesHelper:
         """
         :type series: Series
         """
-        return H20Series(SeriesID=series.id, SiteID=series.site_id, VariableID=series.variable_id,
+        return H2OSeries(SeriesID=series.id, SiteID=series.site_id, VariableID=series.variable_id,
                          MethodID=series.method_id, SourceID=series.source_id, VariableCode=series.variable_code,
                          QualityControlLevelID=series.quality_control_level_id, SiteCode=series.site_code,
                          QualityControlLevelCode=series.quality_control_level_code)
@@ -122,12 +97,14 @@ class OdmSeriesHelper:
     def PopulateH2OSeriesFromString(series_string):
         regex_results = OdmSeriesHelper.RE_STRING_PARSER.match(series_string)
         if regex_results is not None:
-            return H20Series(**regex_results.groupdict())
+            return H2OSeries(**regex_results.groupdict())
         else:
             return None
 
 
 class CsvFileHelper:
+    test_var = "Nothing"
+
     @staticmethod
     def DetermineForcedSeriesChunking(series_list):
         """
@@ -151,7 +128,7 @@ class CsvFileHelper:
             print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
             return None
 
-class H20Series:
+class H2OSeries:
     def __init__(self, SeriesID=None, SiteID=None, SiteCode=None, VariableID=None, VariableCode=None, MethodID=None,
                  SourceID=None, QualityControlLevelID=None, QualityControlLevelCode=None):
         self.SeriesID = SeriesID if SeriesID is not None else -1  # type: int
@@ -176,7 +153,7 @@ class H20Series:
         else:
             comp_tuple = (self.SiteCode, self.VariableCode, self.MethodID, self.SourceID, self.QualityControlLevelCode)
             other_tuple = None
-            if isinstance(other, H20Series):
+            if isinstance(other, H2OSeries):
                 other_tuple = (other.SiteCode, other.VariableCode, other.MethodID, other.SourceID,
                                other.QualityControlLevelCode)
             elif isinstance(other, Series):
@@ -195,19 +172,29 @@ class H20Series:
 
 
 class H2OService:
+    GUI_PUBLICATIONS = {
+        'logger': lambda message: {'message': message},
+        'Datasets_Completed': lambda completed, total: {'completed': completed, 'total': total},
+        'Dataset_Started': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
+        'Dataset_Generated': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource}
+    }
+
     def __init__(self, hydroshare_connections=None, odm_connections=None, resource_templates=None, datasets=None,
-                 subscriptions=None):
+                 subscriptions=None, managed_resources=None):
         self.HydroShareConnections = hydroshare_connections if hydroshare_connections is not None else {}  # type: dict[str, HydroShareAccountDetails]
         self.DatabaseConnections = odm_connections if odm_connections is not None else {}  # type: dict[str, OdmDatasetConnection]
         self.ResourceTemplates = resource_templates if resource_templates is not None else {}  # type: dict[str, ResourceTemplate]
-        self.Datasets = datasets if datasets is not None else {}  # type: dict[str, H2ODataset]
+        self.ManagedResources = managed_resources if managed_resources is not None else {}  # type: dict[str, H2OManagedResource]
         self.Subscriptions = subscriptions if subscriptions is not None else []  # type: list[str]
 
-        self._initialize_directories([H2ODefaults.DATASET_DIR, H2ODefaults.LOGFILE_DIR])
+        self._initialize_directories([APP_SETTINGS.DATASET_DIR, APP_SETTINGS.LOGFILE_DIR])
         sys.stdout = H2OLogger(log_to_gui='logger' in self.Subscriptions)
 
         self.ThreadedFunction = None  # type: Thread
         self.ThreadKiller = ['Continue']
+
+
+        self.ActiveHydroshare = None  # type: HydroShareUtility
 
         self.csv_indexes = ["LocalDateTime", "UTCOffset", "DateTimeUTC"]
         self.qualifier_columns = ["QualifierID", "QualifierCode", "QualifierDescription"]
@@ -224,29 +211,33 @@ class H2OService:
                 start_date = odm_series.begin_date_time
             if end_date is None or end_date < odm_series.end_date_time:
                 end_date = odm_series.end_date_time
-        return range(start_date.year, end_date.year + 1)
+        return APP_SETTINGS.GET_YEARS_INCLUSIVE(start_date.year, end_date.year)
 
-    def _process_csv_file(self, series_service, dataset, site_id, qc_id, source_id, series_list, year=None):
+    def _process_csv_file(self, series_service, managed_resource, site_id, qc_id, source_id, series_list, year=None):
         # Perform the query for the data we want
+        """
+
+        :type managed_resource: H2OManagedResource
+        """
         vars = set([series.VariableID for series in series_list])
         methods = set([series.MethodID for series in series_list])
 
-        if dataset.single_file:
+        if managed_resource.single_file:
             dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, vars, year)
             if len(dataframe) == 0:
                 return
 
             # CSV file generation
             site_code = series_list[0].SiteCode
-            if dataset.chunk_by_year:
-                csv_str = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}_{}.csv'.format(H2ODefaults.DATASET_DIR, site_code,
+            if managed_resource.chunk_by_year:
+                csv_str = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}_{}.csv'.format(APP_SETTINGS.DATASET_DIR, site_code,
                                                                                   source_id, qc_id, year)
             else:
-                csv_str = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}.csv'.format(H2ODefaults.DATASET_DIR, site_code,
+                csv_str = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}.csv'.format(APP_SETTINGS.DATASET_DIR, site_code,
                                                                                source_id, qc_id)
             file_out = CsvFileHelper.createFile(csv_str)
             if file_out is None:
-                print('Unable to create output file for {}'.format(dataset.name))
+                print('Unable to create output file for {}'.format(managed_resource.name))
 
             # Set up our table and prepare for CSV output
             csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
@@ -265,15 +256,15 @@ class H2OService:
                 if len(dataframe) == 0:
                     return
 
-                if dataset.chunk_by_year:
-                    csv_str = '{}ODM_Series_{}_at_{}_Source_{}_QC_Code_{}_{}.csv'.format(H2ODefaults.DATASET_DIR, series.VariableCode,
+                if managed_resource.chunk_by_year:
+                    csv_str = '{}ODM_Series_{}_at_{}_Source_{}_QC_Code_{}_{}.csv'.format(APP_SETTINGS.DATASET_DIR, series.VariableCode,
                                                                                          series.SiteCode, source_id, qc_id, year)
                 else:
-                    csv_str = '{}ODM_Series_{}_at_{}_Source_{}_QC_Code_{}.csv'.format(H2ODefaults.DATASET_DIR, series.VariableCode,
+                    csv_str = '{}ODM_Series_{}_at_{}_Source_{}_QC_Code_{}.csv'.format(APP_SETTINGS.DATASET_DIR, series.VariableCode,
                                                                                       series.SiteCode, source_id, qc_id)
                 file_out = CsvFileHelper.createFile(csv_str)
                 if file_out is None:
-                    print('Unable to create output file for {}'.format(dataset.name))
+                    print('Unable to create output file for {}'.format(managed_resource.name))
 
                 # # Get the qualifiers that we use in this series, merge it with our DataValue set
                 # q_list = [[q.id, q.code, q.description] for q in series_service.get_qualifiers_by_series_id(series.id)]
@@ -301,16 +292,20 @@ class H2OService:
 
     def _threaded_dataset_generation(self):
         generated_files = []  # type: list[FileDetails]
+        dataset_count = len(self.ManagedResources)
+        current_dataset = 0
         try:
-            dataset_count = len(self.Datasets)
-            current_dataset = 0
-            for name, dataset in self.Datasets.iteritems():
+            for name, resource in self.ManagedResources.iteritems():
                 self._thread_checkpoint()
 
-                current_dataset += 1
-                self.NotifyVisualH20('Dataset_Started', dataset.destination_resource, current_dataset, dataset_count)
+                if resource.resource is None:
+                    print 'Error encountered: resource details for resource {} are missing'.format(name)
+                    continue
 
-                chunks = CsvFileHelper.DetermineForcedSeriesChunking(dataset.odm_series)
+                current_dataset += 1
+                self.NotifyVisualH2O('Dataset_Started', resource.resource.title, current_dataset, dataset_count)
+
+                chunks = CsvFileHelper.DetermineForcedSeriesChunking(resource.odm_series)
 
                 for csv_file, series_list in chunks.iteritems():
                     self._thread_checkpoint()
@@ -319,23 +314,38 @@ class H2OService:
                         continue
 
                     odm_service = ServiceManager()
-                    odm_service._current_connection = self.DatabaseConnections[dataset.odm_db_name].ToDict()
+                    odm_service._current_connection = self.DatabaseConnections[resource.odm_db_name].ToDict()
                     series_service = odm_service.get_series_service()
 
-                    if dataset.chunk_by_year:
+                    if resource.chunk_by_year:
                         years = self._get_year_range(series_service, series_list)
                         for year in years:
                             self._thread_checkpoint()
-                            self._process_csv_file(series_service, dataset, csv_file[0], csv_file[2], csv_file[1], series_list, year=year)
+                            self._process_csv_file(series_service, resource, csv_file[0], csv_file[2], csv_file[1], series_list, year=year)
                     else:
-                        self._process_csv_file(series_service, dataset, csv_file[0], csv_file[2], csv_file[1], series_list)
+                        self._process_csv_file(series_service, resource, csv_file[0], csv_file[2], csv_file[1], series_list)
 
-                self.NotifyVisualH20('Dataset_Generated', dataset.destination_resource, current_dataset, dataset_count)
+                self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
         except TypeError as e:
             print 'Dataset generation stopped'
         except Exception as e:
             print 'Exception encountered while generating datasets:\n{}'.format(e)
+        self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 
+    def ConnectToHydroShareAccount(self, account_name):
+        connection_message = 'Unable to authenticate HydroShare account - please check your credentials'
+        resources = {}
+        try:
+            account = self.HydroShareConnections[account_name]
+            self.ActiveHydroshare = HydroShareUtility()
+            if self.ActiveHydroshare.authenticate(**account.to_dict()):
+                resources = self.ActiveHydroshare.getAllResources()
+                connection_message = 'Successfully authenticated HydroShare account details'
+        except:
+            connection_message = 'Unable to authenticate HydroShare account - An exception occurred'
+
+        self.NotifyVisualH2O('logger', 'H2OService: ' + str(connection_message))
+        return resources
 
     def StopActions(self):
         if self.ThreadedFunction is not None:
@@ -358,18 +368,21 @@ class H2OService:
         self.ThreadedFunction = Thread(target=self._threaded_dataset_generation)
         self.ThreadedFunction.start()
 
-    def NotifyVisualH20(self, pub_key, *args):
-        if pub_key in self.Subscriptions and pub_key in H2ODefaults.GUI_PUBLICATIONS.keys():
-            result = H2ODefaults.GUI_PUBLICATIONS[pub_key](*args)
-            pub.sendMessage(pub_key, **result)
+    def NotifyVisualH2O(self, pub_key, *args):
+        try:
+            if pub_key in self.Subscriptions and pub_key in H2OService.GUI_PUBLICATIONS.keys():
+                result = H2OService.GUI_PUBLICATIONS[pub_key](*args)
+                pub.sendMessage(pub_key, **result)
+        except Exception as e:
+            print 'Exception: {}\nUnknown key {} or invalid args {}'.format(e, pub_key, args)
 
     def to_json(self):
         return {'odm_connections': self.DatabaseConnections,
                 'hydroshare_connections': self.HydroShareConnections,
                 'resource_templates': self.ResourceTemplates,
-                'datasets': self.Datasets}
+                'managed_resources': self.ManagedResources}
 
-    def SaveData(self, output_file=H2ODefaults.SETTINGS_FILE_NAME):
+    def SaveData(self, output_file=APP_SETTINGS.SETTINGS_FILE_NAME):
         try:
             json_out = open(output_file, 'w')
             json_out.write(jsonpickle.encode(self.to_json()))
@@ -380,7 +393,7 @@ class H2OService:
             print 'Error saving to disk - file name {}\n{}'.format(output_file, e)
             return False
 
-    def LoadData(self, input_file=H2ODefaults.SETTINGS_FILE_NAME):
+    def LoadData(self, input_file=APP_SETTINGS.SETTINGS_FILE_NAME):
         try:
             json_in = open(input_file, 'r')
             data = jsonpickle.decode(json_in.read())
@@ -388,7 +401,7 @@ class H2OService:
                 self.HydroShareConnections = data['hydroshare_connections'] if 'hydroshare_connections' in data else {}
                 self.DatabaseConnections = data['odm_connections'] if 'odm_connections' in data else {}
                 self.ResourceTemplates = data['resource_templates'] if 'resource_templates' in data else {}
-                self.Datasets = data['datasets'] if 'datasets' in data else {}
+                self.ManagedResources = data['managed_resources'] if 'managed_resources' in data else {}
 
             json_in.close()
             print('Dataset information loaded from {}'.format(input_file))
@@ -396,6 +409,13 @@ class H2OService:
         except IOError as e:
             print 'Error reading input file data from {}:\n\t{}'.format(input_file, e)
             return False
+
+    def CreateResourceFromTemplate(self, template):
+        """
+        :type template: ResourceTemplate
+        """
+
+        pass
 
     def _initialize_directories(self, directory_list):
         for dir_name in directory_list:

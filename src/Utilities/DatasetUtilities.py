@@ -10,7 +10,8 @@ from multiprocessing import Process, Queue
 from time import sleep
 from sqlalchemy.exc import InvalidRequestError
 
-
+from HydroShareUtility import HydroShareResource
+from H2OServices import H2OSeries
 from GAMUTRawData.odmdata import Series
 from GAMUTRawData.odmdata import Site
 from GAMUTRawData.odmdata import SpatialReference
@@ -43,26 +44,29 @@ class FileDetails(object):
         fd_str = '{site} - {s_name} - {f_name}'
         return fd_str.format(site=self.site_code, s_name=self.site_name, f_name=self.file_name)
 
-class H2ODataset:
-    def __init__(self, name='', odm_series=None, destination_resource='', hs_account_name='', odm_db_name='',
-                 create_resource=False, single_file=False, chunk_by_year=False):
-        self.name = name  # type: str
-        self.odm_series = odm_series if odm_series is not None else {}  # type: dict[int, H20Series]
-        self.destination_resource = destination_resource  # type: str
+class H2OManagedResource:
+    def __init__(self, resource=None, odm_series=None, resource_id='', hs_account_name='', odm_db_name='',
+                 single_file=False, chunk_by_year=False, associated_files=None):
+        self.resource_id = resource_id  # type: str
+        self.resource = resource   # type: HydroShareResource
+        self.selected_series = odm_series if odm_series is not None else {}  # type: dict[int, H2OSeries]
         self.hs_account_name = hs_account_name  # type: str
         self.odm_db_name = odm_db_name  # type: str
-        self.create_resource = create_resource  # type: bool
         self.single_file = single_file  # type: bool
         self.chunk_by_year = chunk_by_year  # type: bool
+        self.associated_files = associated_files if associated_files is not None else []  # type: list[FileDetails]
 
     def __dict__(self):
-        return {'name': self.name, 'odm_series': self.odm_series, 'destination_resource': self.destination_resource,
-                'hs_account_name': self.hs_account_name, 'create_resource': self.create_resource,
-                'single_file': self.single_file, 'chunk_by_year': self.chunk_by_year, 'odm_db_name': self.odm_db_name}
+        return {'resource': self.resource, 'selected_series': self.selected_series,
+                'hs_account_name': self.hs_account_name, 'resource_id': self.resource_id,
+                'single_file': self.single_file, 'chunk_by_year': self.chunk_by_year,
+                'odm_db_name': self.odm_db_name, 'associated_files': self.associated_files}
 
     def __str__(self):
-        return 'Dataset {} with {} series and destination resource {}'.format(self.name, len(self.odm_series),
-                                                                              self.destination_resource)
+        if self.resource is not None:
+            return 'Managed resource {} with {} series'.format(self.resource.title, len(self.selected_series))
+        else:
+            return 'Managed resource with ID {} and {} series'.format(self.resource_id, len(self.selected_series))
 
 def _OdmDatabaseConnectionTestTimed(queue):
     db_auth = queue.get(True)

@@ -1,3 +1,3 @@
 
-__all__ = ['H2OServices', 'HydroShareUtility']
+__all__ = ['H2OServices', 'HydroShareUtility', 'DatasetUtilities']
 

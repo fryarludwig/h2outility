@@ -1,6 +1,5 @@
 import wx
 from InputValidator import *
-# import wx.dataview
 import wx.grid
 
 
@@ -84,10 +83,13 @@ class WxHelper:
                     self.DeleteRows(i)
 
         def GetSelectedSeries(self):
-            selected = []
-            for row in self.GetSelectedRows():
-                selected.append(int(self.GetCellValue(row, 0)))
-            return selected
+            return [int(self.GetCellValue(row, 0)) for row in self.GetSelectedRows()]
+
+        def GetSeries(self):
+            series = []
+            for row in range(0, self.NumberRows):
+                series.append(int(self.GetCellValue(row, 0)))
+            return series
 
         def OnCellRightClick(self, event):
             """
@@ -181,7 +183,7 @@ class WxHelper:
         return button
 
     @staticmethod
-    def GetChoice(app, parent, choices, on_change=None, size_x=None, size_y=None):
+    def GetChoice(app, parent, choices, on_change=None, size_x=None, size_y=None, font=None):
         choice = wx.Choice(parent, wx.ID_ANY, choices=choices)
 
         if size_x is not None and size_y is not None:
@@ -189,6 +191,8 @@ class WxHelper:
             choice.SetMaxSize(wx.Size(size_x, size_y))
         if on_change is not None:
             app.Bind(wx.EVT_CHOICE, on_change, choice)
+        if font is not None:
+            choice.SetFont(font)
 
         choice.SetSelection(0)
         return choice

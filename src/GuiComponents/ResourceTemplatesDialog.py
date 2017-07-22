@@ -11,19 +11,19 @@ from InputValidator import *
 
 
 class HydroShareResourceTemplateDialog(wx.Dialog):
-    def __init__( self, parent, templates, selected=0):
+    def __init__( self, parent, templates, selected=0, create_selected=False):
         wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=u"HydroShare Resource Templates", pos=wx.DefaultPosition, size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
         self.templates = templates
 
-        self.SetSizeHintsSz(wx.DefaultSize, wx.DefaultSize)
+        self.SetSizeHints(wx.DefaultSize, wx.DefaultSize)
         bSizer1 = wx.BoxSizer(wx.VERTICAL)
-
 
         template_selector_sizer = wx.GridBagSizer(7, 7)
         template_selector_sizer.SetFlexibleDirection(wx.BOTH)
         template_selector_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
 
-        self.label1 = wx.StaticText(self, wx.ID_ANY, u"Modify Template", wx.DefaultPosition, wx.Size(65, -1), 0)
+        template_text = u'Modify Template' if not create_selected else u'Load saved template'
+        self.label1 = wx.StaticText(self, wx.ID_ANY, template_text, wx.DefaultPosition, wx.Size(65, -1), 0)
         self.label1.Wrap(-1)
         template_selector_sizer.Add(self.label1, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
 
@@ -153,17 +153,34 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
 
         bSizer2111 = wx.BoxSizer(wx.HORIZONTAL)
 
-        self.cancel_button = wx.Button(self, wx.ID_ANY, u"Cancel", wx.DefaultPosition, wx.DefaultSize, 0)
-        bSizer2111.Add(self.cancel_button, 0, wx.ALL, 5)
+        if create_selected:
+            self.cancel_button = wx.Button(self, wx.ID_ANY, u"Cancel", wx.DefaultPosition, wx.DefaultSize, 0)
+            bSizer2111.Add(self.cancel_button, 0, wx.ALL, 5)
 
-        self.delete_button = wx.Button(self, wx.ID_ANY, u"Delete", wx.DefaultPosition, wx.DefaultSize, 0)
-        bSizer2111.Add(self.delete_button, 0, wx.ALL, 5)
+            self.save_button = wx.Button(self, wx.ID_ANY, u"Create Resource", wx.DefaultPosition, wx.DefaultSize, 0)
+            bSizer2111.Add(self.save_button, 0, wx.ALL, 5)
 
-        self.copy_button = wx.Button(self, wx.ID_ANY, u"Copy", wx.DefaultPosition, wx.DefaultSize, 0)
-        bSizer2111.Add(self.copy_button, 0, wx.ALL, 5)
+            # Connect Events
+            self.cancel_button.Bind(wx.EVT_BUTTON, self.on_cancel_clicked)
+            self.save_button.Bind(wx.EVT_BUTTON, self.on_create_clicked)
+        else:
+            self.cancel_button = wx.Button(self, wx.ID_ANY, u"Cancel", wx.DefaultPosition, wx.DefaultSize, 0)
+            bSizer2111.Add(self.cancel_button, 0, wx.ALL, 5)
 
-        self.save_button = wx.Button(self, wx.ID_ANY, u"Save", wx.DefaultPosition, wx.DefaultSize, 0)
-        bSizer2111.Add(self.save_button, 0, wx.ALL, 5)
+            self.delete_button = wx.Button(self, wx.ID_ANY, u"Delete Template", wx.DefaultPosition, wx.DefaultSize, 0)
+            bSizer2111.Add(self.delete_button, 0, wx.ALL, 5)
+
+            self.copy_button = wx.Button(self, wx.ID_ANY, u"Copy Template", wx.DefaultPosition, wx.DefaultSize, 0)
+            bSizer2111.Add(self.copy_button, 0, wx.ALL, 5)
+
+            self.save_button = wx.Button(self, wx.ID_ANY, u"Save Template", wx.DefaultPosition, wx.DefaultSize, 0)
+            bSizer2111.Add(self.save_button, 0, wx.ALL, 5)
+            # Connect Events
+            self.cancel_button.Bind(wx.EVT_BUTTON, self.on_cancel_clicked)
+            self.save_button.Bind(wx.EVT_BUTTON, self.on_save_clicked)
+            self.template_selector_combo.Bind(wx.EVT_CHOICE, self.on_selection_changed)
+            self.delete_button.Bind(wx.EVT_BUTTON, self.on_delete_clicked)
+            self.copy_button.Bind(wx.EVT_BUTTON, self.on_copy_clicked)
 
         bSizer1.Add(bSizer2111, flag=wx.ALL | wx.EXPAND, border=5)
 
@@ -172,12 +189,6 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
 
         self.Centre(wx.BOTH)
 
-        # Connect Events
-        self.template_selector_combo.Bind(wx.EVT_CHOICE, self.on_selection_changed)
-        self.delete_button.Bind(wx.EVT_BUTTON, self.on_delete_clicked)
-        self.cancel_button.Bind(wx.EVT_BUTTON, self.on_cancel_clicked)
-        self.copy_button.Bind(wx.EVT_BUTTON, self.on_copy_clicked)
-        self.save_button.Bind(wx.EVT_BUTTON, self.on_save_clicked)
 
         self.template_selector_combo.SetSelection(selected)
         self.on_selection_changed()
@@ -209,6 +220,11 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
 
     def on_save_clicked(self, event):
         pub.sendMessage("hs_resource_save", result=self._get_input_as_dict())
+        self.EndModal(True)
+        event.Skip()
+
+    def on_create_clicked(self, event):
+        pub.sendMessage("hs_resource_create", result=self._get_input_as_dict())
         self.EndModal(True)
         event.Skip()
 
