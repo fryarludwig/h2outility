@@ -10,7 +10,7 @@ import re
 import smtplib
 import sys
 import json
-from Utilities.DatasetGenerator import *
+from Utilities.DatasetUtilities import *
 from Utilities.H2OServices import *
 from pubsub import pub
 

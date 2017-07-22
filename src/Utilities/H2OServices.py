@@ -414,7 +414,7 @@ class H2OService:
         """
         :type template: ResourceTemplate
         """
-
+        print 'Craeating reasource {}'.format(template)
         pass
 
     def _initialize_directories(self, directory_list):

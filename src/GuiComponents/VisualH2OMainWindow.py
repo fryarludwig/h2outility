@@ -17,6 +17,7 @@ from EditAccountsDialog import HydroShareAccountDialog
 from WxUtilities import WxHelper, Orientation, PADDING, ALIGN
 from ResourceTemplatesDialog import HydroShareResourceTemplateDialog
 from InputValidator import *
+from time import sleep
 
 service_manager = ServiceManager()
 
@@ -29,6 +30,9 @@ class CHOICE_DEFAULTS:
     MANAGED_RESOURCES = '      -- {} resources managed by H2O --'
     UNMANAGED_RESOURCES = '      -- {} resources not managed by H2O --'
     CONNECT_TO_HYDROSHARE = 'Please connect to a HydroShare account'
+
+HS_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id)
+H2O_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.resource.title, resource.id)
 
 class VisualH2OWindow(wx.Frame):
     def __init__(self, parent, id, title):
@@ -116,14 +120,15 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.SaveData()
 
     def OnCreateResource(self, result=None):
+        print 'Creating resource!'
         if result is None:
             return
         template = ResourceTemplate(result)
         if template is not None:
             self.H2OService.CreateResourceFromTemplate(template)
         self.UpdateControls()
-        self.H2OService.SaveData()
-        self._update_target_choices()
+        # self.H2OService.SaveData()
+        # self._update_target_choices()
 
     def OnRemoveDatabaseAuth(self, result=None):
         if result is None:
@@ -207,12 +212,10 @@ class VisualH2OWindow(wx.Frame):
         if self._resources is None:
             choices = [CHOICE_DEFAULTS.CONNECT_TO_HYDROSHARE]
         else:
-
             managed_resources = [CHOICE_DEFAULTS.RESOURCE_STR.format(resource.resource.title, id) for id, resource in
                         self.H2OService.ManagedResources.iteritems() if resource.resource is not None]
             unmanaged_resources = [CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, id) for id, resource in
                         self._resources.iteritems() if id not in self.H2OService.ManagedResources]
-
             choices = [CHOICE_DEFAULTS.CREATE_NEW_RESOURCE,
                        CHOICE_DEFAULTS.MANAGED_RESOURCES.format(len(managed_resources))]
             choices += managed_resources + [CHOICE_DEFAULTS.UNMANAGED_RESOURCES.format(len(unmanaged_resources))]
@@ -247,6 +250,8 @@ class VisualH2OWindow(wx.Frame):
         busy = wx.BusyInfo("Loading ODM series from database {}".format(connection.name))
 
         if connection.VerifyConnection():
+            self.h2o_series_dict.clear()
+            self.odm_series_dict.clear()
             service_manager._current_connection = connection.ToDict()
             series_service = service_manager.get_series_service()
             series_list = series_service.get_all_series()
@@ -262,13 +267,10 @@ class VisualH2OWindow(wx.Frame):
         self._resources = self.H2OService.ConnectToHydroShareAccount(account_name)
 
     def on_database_chosen(self, event):
-        self.available_series_grid.Clear()
-        self.selected_series_grid.Clear()
         if event.GetSelection() > 0:
-            self.h2o_series_dict.clear()
-            self.odm_series_dict.clear()
             selection_string = self.database_connection_choice.GetStringSelection()
             self.SetOdmConnection(self.H2OService.DatabaseConnections[selection_string])
+            self.UpdateSeriesInGrid()
         else:
             print "No selection made"
 
@@ -280,13 +282,13 @@ class VisualH2OWindow(wx.Frame):
         self._update_target_choices()
 
     def UpdateSeriesInGrid(self, event=None):
-        self.available_series_grid.Clear()
-        self.selected_series_grid.Clear()
-
         if self.odm_series_dict is None or len(self.odm_series_dict) == 0:
             self.remove_selected_button.Disable()
             self.add_to_selected_button.Disable()
             return
+
+        self.available_series_grid.Clear()
+        self.selected_series_grid.Clear()
 
         for series in self.odm_series_dict.values():
             self.available_series_grid.AppendSeries(series)
@@ -347,6 +349,14 @@ class VisualH2OWindow(wx.Frame):
                 elif action == 'Deselect All':
                     control.Deselect(ctrl_index)
 
+    def _get_current_series_ids_from_resource(self, resource):
+        if isinstance(resource, H2OManagedResource):
+            return [series.SeriesID for series in self.h2o_series_dict.itervalues() if series in
+                   resource.selected_series.itervalues()]
+        else:
+            print 'Resource is unmanaged - there are no associated series'
+            return []
+
     def _update_target_choices(self, event=None):
         WxHelper.UpdateChoiceControl(self.hs_resource_choice, self._get_destination_resource_choices())
         if event is not None:
@@ -357,14 +367,10 @@ class VisualH2OWindow(wx.Frame):
         if resource is None:
             self.OnPrintLog('Invalid resource selected, cannot remove from managed resources')
             return
-
-        print 'removing: ' + str(resource.id)
-        print self.H2OService.ManagedResources.pop(resource.id, None)
+        self.H2OService.ManagedResources.pop(resource.id, None)
         self.H2OService.SaveData()
         self._update_target_choices()
-        if resource.id in self._resources:
-            prev_title = self._resources[resource.id].title
-            self.hs_resource_choice.SetStringSelection(prev_title)
+        self.hs_resource_choice.SetSelection(event.GetSelection())
 
     def _save_managed_clicked(self, event):
         if not self._verify_dataset_selections():
@@ -374,7 +380,6 @@ class VisualH2OWindow(wx.Frame):
         for series_id in self.selected_series_grid.GetSeries():
             if series_id in self.h2o_series_dict:
                 series[series_id] = self.h2o_series_dict[series_id]
-        # series = [self.h2o_series_dict.get(series_id, None) for series_id in self.selected_series_grid.GetSeries()]
 
         resource = self._get_selected_resource()  # type: HydroShareResource
         if resource is None:
@@ -401,7 +406,8 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.ManagedResources[resource.id] = managed
         self.H2OService.SaveData()
         self._update_target_choices()
-        self.hs_resource_choice.SetStringSelection(resource.title)
+        self.hs_resource_choice.SetStringSelection(HS_RES_STR(resource))
+
 
     def _verify_dataset_selections(self):
         if len(self.selected_series_grid.GetSeries()) == 0:
@@ -435,23 +441,19 @@ class VisualH2OWindow(wx.Frame):
         elif len(self._resources) > 2:
             resource = self._get_selected_resource()        # type: H2OManagedResource
 
-            self.selected_series_grid.Clear()
-            self.available_series_grid.Clear()
-
             if resource is None:
                 print 'No resource was selected'
                 return
-            # elif isinstance(resource, H2OManagedResource):
-            elif isinstance(resource, HydroShareResource) and resource.id in self.H2OService.ManagedResources:
-                resource = self.H2OService.ManagedResources[resource.id]
             elif isinstance(resource, HydroShareResource):
-                temp = resource
-                self.H2OService.ActiveHydroshare.getMetadataForResource(temp)
-                self.FillResourceFields(temp)
-                print 'Not a managed resource'
-                return
+                if resource.id in self.H2OService.ManagedResources:
+                    resource = self.H2OService.ManagedResources[resource.id]
+                else:
+                    temp = resource
+                    self.H2OService.ActiveHydroshare.getMetadataForResource(temp)
+                    self.FillResourceFields(temp)
+                    self.UpdateSeriesInGrid()
+                    return
 
-            print 'Populating Series informnaton'
             self.FillResourceFields(resource.resource)
             self.OnPrintLog('Fetching information for resource {}'.format(resource.resource.title))
 
@@ -463,14 +465,7 @@ class VisualH2OWindow(wx.Frame):
                     self.OnPrintLog('Error loading ODM series: Unknown connection {}'.format(resource.odm_db_name))
                     return
 
-            print 'Checking matches for series:'
-            for s_id, series in resource.selected_series.iteritems():
-                print '{}: {}'.format(s_id, series)
-            matches = [series.SeriesID for series in self.h2o_series_dict.itervalues() if series in resource.selected_series.itervalues()]
-
-            print 'Found matches'
-            print matches
-
+            matches = self._get_current_series_ids_from_resource(resource)
             for series in self.odm_series_dict.itervalues():
                 if series.id in matches:
                     self.selected_series_grid.AppendSeries(series)

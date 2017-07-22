@@ -42,7 +42,7 @@ class Common:
 
     def dump_settings(self):
         for key in self.__dict__:
-            print '{:<22}: {}'.format(key, self.__dict__[key])
+            print '{:<35} {}'.format(str(key) + ':', self.__dict__[key])
 
 """
 Functions used among H2O Services

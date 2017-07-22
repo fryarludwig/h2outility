@@ -6,6 +6,7 @@ import wx
 import wx.xrc
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility
 from GAMUTRawData.CSVDataFileGenerator import OdmDatabaseDetails
+from WxUtilities import *
 from pubsub import pub
 from InputValidator import *
 
@@ -15,6 +16,7 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=u"HydroShare Resource Templates", pos=wx.DefaultPosition, size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
         self.templates = templates
 
+        self.create_new = create_selected
         self.SetSizeHints(wx.DefaultSize, wx.DefaultSize)
         bSizer1 = wx.BoxSizer(wx.VERTICAL)
 
@@ -25,29 +27,25 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         template_text = u'Modify Template' if not create_selected else u'Load saved template'
         self.label1 = wx.StaticText(self, wx.ID_ANY, template_text, wx.DefaultPosition, wx.Size(65, -1), 0)
         self.label1.Wrap(-1)
-        template_selector_sizer.Add(self.label1, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
+        template_selector_sizer.Add(self.label1, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL | wx.EXPAND, 7)
 
-        template_selector_comboChoices = ['Add new...'] + templates.keys()
+        template_selector_comboChoices = ['Add new...'] + templates.keys() if not create_selected else templates.keys()
         self.template_selector_combo = wx.Choice(self, wx.ID_ANY, wx.DefaultPosition, wx.Size(250, -1), template_selector_comboChoices, 0)
         template_selector_sizer.Add(self.template_selector_combo, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALL | wx.EXPAND, 5)
 
         template_selector_sizer.AddGrowableCol(1)
         bSizer1.Add(template_selector_sizer)
 
-        bSizer2 = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.m_staticText1 = wx.StaticText(self, wx.ID_ANY, u"Template Name", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
-        self.m_staticText1.Wrap(-1)
-        self.m_staticText1.SetMinSize(wx.Size(100, -1))
-
-        bSizer2.Add(self.m_staticText1, 0, wx.ALL, 7)
-
-        self.template_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
-        self.template_name_input.SetMinSize(wx.Size(250, -1))
-
-        bSizer2.Add(self.template_name_input, 0, wx.ALL, 5)
-
-        bSizer1.Add(bSizer2, flag=wx.ALL | wx.EXPAND, border=5)
+        if not create_selected:
+            bSizer2 = wx.BoxSizer(wx.HORIZONTAL)
+            self.m_staticText1 = wx.StaticText(self, wx.ID_ANY, u"Template Name", wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTRE)
+            self.m_staticText1.Wrap(-1)
+            self.m_staticText1.SetMinSize(wx.Size(100, -1))
+            bSizer2.Add(self.m_staticText1, 0, wx.ALL, 7)
+            self.template_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
+            self.template_name_input.SetMinSize(wx.Size(250, -1))
+            bSizer2.Add(self.template_name_input, 0, wx.ALL | wx.EXPAND, 5)
+            bSizer1.Add(bSizer2, flag=wx.ALL | wx.EXPAND, border=5)
 
         bSizer21 = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -232,7 +230,8 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         value = self.template_selector_combo.GetStringSelection()
         if value in self.templates:
             template = self.templates[value]
-            self.template_name_input.SetValue(template.template_name)
+            if not self.create_new:
+                self.template_name_input.SetValue(template.template_name)
             self.resource_name_input.SetValue(template.name_prefix)
             self.resource_abstract_input.SetValue(template.abstract)
             self.award_number_input.SetValue(template.award_number)
@@ -240,7 +239,8 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
             self.funding_agency_input.SetValue(template.funding_agency)
             self.agency_url_input.SetValue(template.agency_url)
         else:
-            self.template_name_input.SetValue("")
+            if not self.create_new:
+                self.template_name_input.SetValue("")
             self.resource_name_input.SetValue("")
             self.resource_abstract_input.SetValue("")
             self.award_number_input.SetValue("")
@@ -250,7 +250,7 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
 
     def _get_input_as_dict(self):
         return dict(selector=self.template_selector_combo.GetStringSelection(),
-                    name=self.template_name_input.Value,
+                    name=self.template_name_input.Value if not self.create_new else '',
                     resource_name=self.resource_name_input.Value, abstract=self.resource_abstract_input.Value,
                     funding_agency=self.funding_agency_input.Value, agency_url=self.agency_url_input.Value,
                     award_title=self.award_title_input.Value, award_number=self.award_number_input.Value)
