@@ -5,10 +5,9 @@ import xml.etree.ElementTree as ElementTree
 
 from datetime import datetime
 from hs_restclient import *
-from GAMUTRawData.CSVDataFileGenerator import GenericResourceDetails
+from Common import *
 from oauthlib.oauth2 import InvalidGrantError, InvalidClientError
 
-# service_manager = ServiceManager()
 
 class HydroShareAccountDetails:
     def __init__(self, values=None):
@@ -29,6 +28,7 @@ class HydroShareAccountDetails:
         return dict(username=self.username, password=self.password,
                     client_id=self.client_id, client_secret=self.client_secret)
 
+
 class HydroShareResource:
     def __init__(self, resource_dict):
         self.id = resource_dict['resource_id'] if 'resource_id' in resource_dict else ""
@@ -42,18 +42,46 @@ class HydroShareResource:
         self.award_number = ""
         self.files = []
         self.subjects = []
-        self.period_start = None
-        self.period_end = None
-        self.metadata_xml = None
+        self.period_start = ""
+        self.period_end = ""
         self.public = resource_dict['public'] if 'public' in resource_dict else False
+
+    def get_metadata(self):
+        metadata = {
+            'title': str(self.title),
+            'description': str(self.abstract)
+            # ,
+            # 'funding_agencies': [{'agency_name': str(self.funding_agency),
+            #                       'award_title': str(self.award_title),
+            #                       'award_number': str(self.award_number),
+            #                       'agency_url': str(self.agency_url)}]
+            # ,
+            # "coverage": {"type": "period",
+            #              "value": {"start": self.period_start, "end": self.period_end}}}
+        }
+        # authors = {"creator": {"organization": 'iUTAH GAMUT Working Group'}}
+
+        # spatial_coverage = dict(coverage={'type': 'point',
+        #                                   'value': {
+        #                                       'east': '{}'.format(site.longitude),
+        #                                       'north': '{}'.format(site.latitude),
+        #                                       'units': 'Decimal degrees',
+        #                                       'name': '{}'.format(site.name),
+        #                                       'elevation': '{}'.format(site.elevation_m),
+        #                                       'projection': '{}'.format(site.spatial_ref.srs_name)
+        #                                   }})
+
+        # return metadata
+        return {}  # Return an empty array until the HydroShare metadata bug is fixed
 
     def __str__(self):
         return '{} with {} files'.format(self.title, len(self.files))
 
+
 class ResourceTemplate:
     def __init__(self, values=None):
         self.template_name = ""
-        self.name_prefix = ""
+        self.title = ""
         self.abstract = ""
         self.keywords = []
         self.funding_agency = ""
@@ -63,12 +91,18 @@ class ResourceTemplate:
 
         if values is not None:
             self.template_name = values['name'] if 'name' in values else ""
-            self.name_prefix = values['resource_name'] if 'resource_name' in values else ""
+            self.title = values['resource_name'] if 'resource_name' in values else ""
             self.abstract = values['abstract'] if 'abstract' in values else ""
             self.funding_agency = values['funding_agency'] if 'funding_agency' in values else ""
             self.agency_url = values['agency_url'] if 'agency_url' in values else ""
             self.award_title = values['award_title'] if 'award_title' in values else ""
             self.award_number = values['award_number'] if 'award_number' in values else ""
+
+    def get_metadata(self):
+        return str([{'funding_agencies': {'agency_name': self.funding_agency,
+                                          'award_title': self.award_title,
+                                          'award_number': self.award_number,
+                                          'agency_url': self.agency_url}}]).replace('\'', '"')
 
     def __str__(self):
         return self.template_name
@@ -110,7 +144,7 @@ class HydroShareUtility:
         else:
             self.auth = HydroShareAuthBasic(username, password)
         try:
-            self.client = HydroShare(auth=self.auth)#, verify=False)
+            self.client = HydroShare(auth=self.auth)  # , verify=False)
             self.user_info = self.client.getUserInfo()
             return True
         except HydroShareException as e:  # for incorrect username/password combinations
@@ -121,7 +155,6 @@ class HydroShareUtility:
             print('Invalid client ID and/or client secret: {}'.format(e))
         self.auth = None
         return False
-
 
     def purgeDuplicateGamutFiles(self, resource_id, regex, confirm_delete=False):
         """
@@ -137,8 +170,8 @@ class HydroShareUtility:
         for remote_file in resource_files:
             results = re_breakdown.match(remote_file['url'])  # Check the file URL for expected patterns
             temp_dict = {'duplicated': ''} if results is None else results.groupdict()  # type: dict
-            if len(temp_dict['duplicated']) > 0:               # A non-duplicated file will match with length 0
-                duplicates_list.append(temp_dict)              # Save the file name so we can remove it later
+            if len(temp_dict['duplicated']) > 0:  # A non-duplicated file will match with length 0
+                duplicates_list.append(temp_dict)  # Save the file name so we can remove it later
 
         for file_detail in duplicates_list:
             if not confirm_delete:
@@ -246,18 +279,20 @@ class HydroShareUtility:
         """
         metadata = self.client.getScienceMetadata(resource.id)
         resource.subjects = [item['value'] for item in metadata['subjects']]
-        resource.abstract = metadata['description']
-        resource.agency_url = metadata['funding_agencies'][0]['agency_url']
-        resource.funding_agency = metadata['funding_agencies'][0]['agency_name']
-        resource.award_number = metadata['funding_agencies'][0]['award_number']
-        resource.award_title = metadata['funding_agencies'][0]['award_title']
+        resource.abstract = metadata['description'] if 'description' in metadata else ''
+        if 'funding_agencies' in metadata and len(metadata['funding_agencies']) > 0:
+            funding_agency = metadata['funding_agencies'][0]
+            resource.agency_url = funding_agency['agency_url'] if 'agency_url' in funding_agency else ''
+            resource.funding_agency = funding_agency['agency_name'] if 'agency_name' in funding_agency else ''
+            resource.award_number = funding_agency['award_number'] if 'award_number' in funding_agency else ''
+            resource.award_title = funding_agency['award_title'] if 'award_title' in funding_agency else ''
 
     def updateResourceMetadata(self, resource):
         """
 
         :type resource: HydroShareResource
         """
-        return self.client.updateScienceMetadata(resource.id, resource.to_json())
+        return self.client.updateScienceMetadata(resource.id, resource.get_metadata())
 
     def getFileListForResource(self, resource):
         resource.files = [os.path.basename(f['url']) for f in self.getResourceFileList(resource.id)]
@@ -287,36 +322,21 @@ class HydroShareUtility:
             filtered_resources.append(resource_object)
         return filtered_resources
 
-    def upload(self, files_list, resource_id, retry_on_failure=False):
-        """
-        Connect as user and upload the files to HydroShare
-        :param paired_file_list: List of dictionaries in format [ {"name": "file_name", "path": "file_path" }, {...} ]
-        :param retry_on_failure: If an exception occurs in this function, this function will call itself once more
-        :return: An error string on multiple failures, and nothing on success
-        """
+    def UploadFiles(self, files, resource_id):
         if self.auth is None:
             raise HydroShareUtilityException("Cannot modify resources without authentication")
         try:
-            for local_file in files_list:
-
-                matching_files = [f for f in self.getResourceFileList(resource_id) if local_file.file_name in f]
-                action = 'update' if len(matching_files) > 0 else 'create'
-                if action == 'update':
-                    self.client.deleteResourceFile(resource_id, local_file.file_name)
-                self.client.addResourceFile(resource_id, str(local_file.file_path)) #, resource_filename=local_file.file_name)
-                # if self.updateResourcePeriodMetadata(resource_id, local_file.coverage_start, local_file.coverage_end):
-                #     print "Resource metadata for temporal coverage was updated"
-                #     exit()
-                # else:
-                #     print "Unable to update resource metadata"
-                print("{} {}d in remote {}".format(local_file.file_name, action, self.resource_cache[resource_id].name))
+            for csv_file in files:
+                try:
+                    self.client.deleteResourceFile(resource_id, os.path.basename(csv_file))
+                except Exception as e:
+                    if APP_SETTINGS.H2O_DEBUG and APP_SETTINGS.VERBOSE:
+                        print 'File did not exist in remote: {}, {}'.format(type(e), e)
+                self.client.addResourceFile(resource_id, csv_file)
+                print("File {} uploaded to remote {}".format(os.path.basename(csv_file), resource_id))
         except HydroShareException as e:
-            if retry_on_failure:
-                print('Upload encountered an error - attempting again. Error encountered: \n{}'.format(e.message))
-                return self.upload(files_list, resource_id, retry_on_failure=False)
-            else:
-                print("Upload failed - could not complete upload to HydroShare due to exception: {}".format(e))
-                return False
+            print("Upload failed - could not complete upload to HydroShare due to exception: {}".format(e))
+            return False
         except KeyError as e:
             print('Incorrectly formatted arguments given. Expected key not found: {}'.format(e))
             return False
@@ -445,12 +465,11 @@ class HydroShareUtility:
         except Exception as e:
             print 'Exception encountered while deleting resource {}: {}'.format(resource_id, e)
 
-
     def createNewResource(self, resource):
         """
 
         :param resource:
-        :type resource: GenericResourceDetails
+        :type resource: ResourceTemplate
         :return:
         :rtype: str
         """
@@ -462,11 +481,224 @@ class HydroShareUtility:
             # print 'Creating resource {}'.format(resource.resource_name)
             # print 'Metadata: {}'.format(resource.getMetadata())
             # print 'Formatted: \n{}'.format(resource.getMetadata().replace(r'}, {', '},\n{'))
-            resource_id = self.client.createResource(resource_type='GenericResource', title=resource.resource_name,
-                                                     abstract=resource.abstract, keywords=resource.keywords,
-                                                     metadata=resource.getMetadata())
-            new_resource = HydroShareResource({})
-            new_resource.id = resource_id
-            new_resource.name = resource.resource_name
-            self.resource_cache[resource_id] = new_resource
+            print resource.title
+            print resource.abstract
+            print resource.get_metadata()
+
+            resource_id = self.client.createResource(resource_type='CompositeResource', title=resource.title,
+                                                     abstract=resource.abstract)
+            # keywords=resource.keywords,
+                                                     # metadata=resource.get_metadata())
+
+            # new_resource = HydroShareResource({})
+            # new_resource.id = resource_id
+            # new_resource.name = resource.resource_name
+            # self.resource_cache[resource_id] = new_resource
             return resource_id
+        return None
+
+
+"""
+
+HydroShare metadata:
+    {
+        coverages:
+            [
+                {
+                    type:
+                        'point'
+                    value:
+                        {
+                            units:
+                                'Decimal degrees'
+                            east:
+                                -111.507494
+                            north:
+                                41.864805
+                            name:
+                                'T.W. Daniels Experimental Forest/Logan River Watershed'
+                            projection:
+                                'WGS 84 EPSG:4326'
+                        }
+                }
+                {
+                    type:
+                        'period'
+                    value:
+                        {
+                            start:
+                                '2014-05-13'
+                            end:
+                                '2015-07-12'
+                        }
+                }
+            ]
+        publisher:
+            None
+        dates:
+            [
+                {
+                    type:
+                        'created'
+                    start_date:
+                        '2016-07-15T21:26:30.579026Z'
+                    end_date:
+                        None
+                }
+                {
+                    type:
+                        'modified'
+                    start_date:
+                        '2017-02-03T19:16:30.487708Z'
+                    end_date:
+                        None
+                }
+            ]
+        funding_agencies:
+            [
+                {
+                    award_number:
+                        '1208732'
+                    agency_name:
+                        'National Science Foundation'
+                    agency_url:
+                        'http://www.nsf.gov'
+                    award_title:
+                        'iUTAH-innovative Urban Transitions and Aridregion  Hydro-sustainability'
+                }
+            ]
+        description:
+            'This data set contains 15-min sapflux data from 12 aspens at the T.W. Daniels Experimental Forest in 
+            Logan Canyon, along with meteorological and soil temperature and moisture measurements. The sapflux data 
+            are presented as raw data as well as processed data. Filtering steps were done to remove bad data- the 
+            intermediate filtering steps are also included for clarity. Sapflux data collection commenced on 13 May 
+            2014 and continued until 12 July 2015. A complete description of the methods can be found in: AM Chan, 
+            (2015), "Tree Transpiration from Two Forests in the Wasatch Mountains, Utah", MS Thesis, Dept of Biology, 
+            University of Utah. '
+        contributors:
+            [ ]
+        title:
+            'T.W. Daniels Sapflux Aspen'
+        identifiers:
+            [
+                {
+                    url:
+                        'http://www.hydroshare.org/resource/39226ebf17294b6cb2f3ff8bbc3cc25b'
+                    name:
+                        'hydroShareIdentifier'
+                }
+            ]
+        relations:
+            [ ]
+        language:
+            'eng'
+        subjects:
+            [
+                {
+                    value:
+                        'Logan Canyon'
+                }
+                {
+                    value:
+                        'aspen'
+                }
+                {
+                    value:
+                        'T.W. Daniels'
+                }
+                {
+                    value:
+                        'soil temperature'
+                }
+                {
+                    value:
+                        'snow depth'
+                }
+                {
+                    value:
+                        'Sapflux'
+                }
+                {
+                    value:
+                        'air temperature'
+                }
+                {
+                    value:
+                        'weather'
+                }
+                {
+                    value:
+                        'vapor pressure'
+                }
+                {
+                    value:
+                        'soil moisture'
+                }
+                {
+                    value:
+                        'Logan River'
+                }
+                {
+                    value:
+                        'iUTAH'
+                }
+                {
+                    value:
+                        'evapotranspiration'
+                }
+            ]
+        sources:
+            [ ]
+        formats:
+            [
+                {
+                    value:
+                        'text/csv'
+                }
+            ]
+        rights:
+            'This resource is shared under the Creative Commons Attribution CC BY. 
+            http://creativecommons.org/licenses/by/4.0/'
+        creators:
+            [
+                {
+                    name:
+                        'Allison Chan'
+                    order:
+                        1
+                    phone:
+                        ''
+                    address:
+                        ''
+                    organization:
+                        'University of Utah'
+                    homepage:
+                        ''
+                    email:
+                        'allison.chan@utah.edu'
+                    description:
+                        ''
+                }
+                {
+                    name:
+                        'David Bowling'
+                    order:
+                        2
+                    phone:
+                        ''
+                    address:
+                        ''
+                    organization:
+                        ''
+                    homepage:
+                        ''
+                    email:
+                        'david.bowling@utah.edu'
+                    description:
+                        '/user/910/'
+                }
+            ]
+        type:
+            'http://www.hydroshare.org/terms/GenericResource'
+    }
+"""

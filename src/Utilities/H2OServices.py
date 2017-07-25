@@ -4,6 +4,8 @@ import re
 import smtplib
 import sys
 import json
+
+import jsonpickle
 from pubsub import pub
 import time
 import wx
@@ -14,11 +16,9 @@ from exceptions import IOError
 
 from GAMUTRawData.odmservices import ServiceManager
 from GAMUTRawData.odmdata import Series
-from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection
+from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection, BuildCsvFiles
 from HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate
-from H2OSeries import H2OSeries
 
-from GAMUTRawData.CSVDataFileGenerator import *
 from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException
 from H2OSeries import H2OSeries, OdmSeriesHelper
 from Common import *
@@ -34,15 +34,16 @@ class H2OService:
         'Dataset_Generated': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource}
     }
 
-    def __init__(self, hydroshare_connections=None, odm_connections=None, resource_templates=None, datasets=None,
-                 subscriptions=None, managed_resources=None):
-        self.HydroShareConnections = hydroshare_connections if hydroshare_connections is not None else {}  # type: dict[str, HydroShareAccountDetails]
+    def __init__(self, hydroshare_connections=None, odm_connections=None, resource_templates=None, subscriptions=None,
+                 managed_resources=None):
+        self.HydroShareConnections = hydroshare_connections if hydroshare_connections is not None else {}  # type:
+        # dict[str, HydroShareAccountDetails]
         self.DatabaseConnections = odm_connections if odm_connections is not None else {}  # type: dict[str, OdmDatasetConnection]
         self.ResourceTemplates = resource_templates if resource_templates is not None else {}  # type: dict[str, ResourceTemplate]
         self.ManagedResources = managed_resources if managed_resources is not None else {}  # type: dict[str, H2OManagedResource]
         self.Subscriptions = subscriptions if subscriptions is not None else []  # type: list[str]
 
-        self._initialize_directories([APP_SETTINGS.DATASET_DIR, APP_SETTINGS.LOGFILE_DIR])
+        InitializeDirectories([APP_SETTINGS.DATASET_DIR, APP_SETTINGS.LOGFILE_DIR])
         sys.stdout = H2OLogger(log_to_gui='logger' in self.Subscriptions)
 
         self.ThreadedFunction = None  # type: Thread
@@ -54,155 +55,85 @@ class H2OService:
         self.qualifier_columns = ["QualifierID", "QualifierCode", "QualifierDescription"]
         self.csv_columns = ["DataValue", "LocalDateTime", "UTCOffset", "DateTimeUTC"]
 
-    def _get_year_range(self, series_service, series_list):
-        start_date = None
-        end_date = None
-        for series in series_list:
-            odm_series = series_service.get_series_from_filter(series.SiteID, series.VariableID,
-                                                               series.QualityControlLevelID, series.SourceID,
-                                                               series.MethodID)
-            if start_date is None or start_date > odm_series.begin_date_time:
-                start_date = odm_series.begin_date_time
-            if end_date is None or end_date < odm_series.end_date_time:
-                end_date = odm_series.end_date_time
-        return APP_SETTINGS.GET_YEARS_INCLUSIVE(start_date.year, end_date.year)
-
-    def _process_csv_file(self, series_service, managed_resource, site_id, qc_id, source_id, series_list, year=None):
-        # Perform the query for the data we want
-        """
-
-        :type managed_resource: H2OManagedResource
-        """
-        vars = set([series.VariableID for series in series_list])
-        methods = set([series.MethodID for series in series_list])
-
-        if managed_resource.single_file:
-            dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, vars, year)
-            if len(dataframe) == 0:
-                return
-
-            # CSV file generation
-            site_code = series_list[0].SiteCode
-            if managed_resource.chunk_by_year:
-                csv_str = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}_{}.csv'.format(APP_SETTINGS.DATASET_DIR, site_code,
-                                                                                  source_id, qc_id, year)
-            else:
-                csv_str = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}.csv'.format(APP_SETTINGS.DATASET_DIR, site_code,
-                                                                               source_id, qc_id)
-            file_out = OdmSeriesHelper.createFile(csv_str)
-            if file_out is None:
-                print('Unable to create output file for {}'.format(managed_resource.name))
-
-            # Set up our table and prepare for CSV output
-            csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
-                                           columns="VariableCode", values="DataValue")
-            del dataframe
-
-            # Generate header for the CSV file
-
-            # Write data to CSV file
-            csv_table.to_csv(file_out)
-            file_out.close()
-        else:
-            for series in series_list:
-                self._thread_checkpoint()
-                # CSV file generation
-                dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, [series.VariableID], year)
-                if len(dataframe) == 0:
-                    return
-
-                if managed_resource.chunk_by_year:
-                    csv_str = '{}ODM_Series_{}_at_{}_Source_{}_QC_Code_{}_{}.csv'.format(APP_SETTINGS.DATASET_DIR, series.VariableCode,
-                                                                                         series.SiteCode, source_id, qc_id, year)
-                else:
-                    csv_str = '{}ODM_Series_{}_at_{}_Source_{}_QC_Code_{}.csv'.format(APP_SETTINGS.DATASET_DIR, series.VariableCode,
-                                                                                      series.SiteCode, source_id, qc_id)
-                file_out = OdmSeriesHelper.createFile(csv_str)
-                if file_out is None:
-                    print('Unable to create output file for {}'.format(managed_resource.name))
-
-                # # Get the qualifiers that we use in this series, merge it with our DataValue set
-                # q_list = [[q.id, q.code, q.description] for q in series_service.get_qualifiers_by_series_id(series.id)]
-                # q_df = pandas.DataFrame(data=q_list, columns=self.qualifier_columns)
-                # dv_set = dv_raw.merge(q_df, how='left', on="QualifierID")  # type: pandas.DataFrame
-                # del dv_raw
-                # dv_set.set_index(self.csv_indexes, inplace=True)
-                #
-                # # Drop the columns that we aren't interested in, and correct any names afterwards
-                # for column in dv_set.columns.tolist():
-                #     if column not in self.csv_columns:
-                #         dv_set.drop(column, axis=1, inplace=True)
-                # dv_set.rename(columns={"DataValue": series.variable_code}, inplace=True)
-
-                # Set up our table and prepare for CSV output
-                csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
-                                               columns="VariableCode", values="DataValue")
-                del dataframe
-
-                # Generate headers for each CSV file
-
-                # Write data to CSV file
-
-                csv_table.to_csv(file_out)
-                file_out.close()
-
+    def _thread_checkpoint(self):
+        return self.ThreadKiller[0] == 'Continue'
 
     def _threaded_dataset_generation(self):
-        generated_files = []  # type: list[FileDetails]
         dataset_count = len(self.ManagedResources)
         current_dataset = 0
         try:
-            for name, resource in self.ManagedResources.iteritems():
+            for resource in self.ManagedResources.itervalues():
                 self._thread_checkpoint()
 
                 if resource.resource is None:
-                    print 'Error encountered: resource details for resource {} are missing'.format(name)
+                    print 'Error encountered: resource details for resource {} are missing'.format(resource.resource_id)
                     continue
 
                 current_dataset += 1
                 self.NotifyVisualH2O('Dataset_Started', resource.resource.title, current_dataset, dataset_count)
+                self._thread_checkpoint()
 
-                chunks = OdmSeriesHelper.DetermineForcedSeriesChunking(resource.odm_series)
+                odm_service = ServiceManager()
+                odm_service._current_connection = self.DatabaseConnections[resource.odm_db_name].ToDict()
+                series_service = odm_service.get_series_service()
+                self._thread_checkpoint()
 
-                for csv_file, series_list in chunks.iteritems():
+                chunks = OdmSeriesHelper.DetermineForcedSeriesChunking(resource)
+                print '\n -- {} contains {} chunks'.format(resource.resource.title, len(chunks))
+                for chunk in chunks:
                     self._thread_checkpoint()
-                    if len(series_list) == 0:
-                        print 'Unable to process csv file {}'.format(csv_file)
-                        continue
-
-                    odm_service = ServiceManager()
-                    odm_service._current_connection = self.DatabaseConnections[resource.odm_db_name].ToDict()
-                    series_service = odm_service.get_series_service()
-
-                    if resource.chunk_by_year:
-                        years = self._get_year_range(series_service, series_list)
-                        for year in years:
-                            self._thread_checkpoint()
-                            self._process_csv_file(series_service, resource, csv_file[0], csv_file[2], csv_file[1], series_list, year=year)
-                    else:
-                        self._process_csv_file(series_service, resource, csv_file[0], csv_file[2], csv_file[1], series_list)
-
+                    odm_series = [OdmSeriesHelper.GetOdmSeriesFromH2OSeries(series_service, h2o) for h2o in chunk]
+                    resource.associated_files += BuildCsvFiles(series_service, odm_series, resource.chunk_years)
                 self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
+            print 'Dataset generation completed without error'
         except TypeError as e:
-            print 'Dataset generation stopped'
+            print 'Dataset generation stopped without finishing'
+            if APP_SETTINGS.H2O_DEBUG:
+                print 'Exception encountered while running thread: {}'.format(e)
         except Exception as e:
             print 'Exception encountered while generating datasets:\n{}'.format(e)
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 
+    def _threaded_file_upload(self):
+        current_account_name = 'None'
+        for resource in self.ManagedResources.values():
+            self._thread_checkpoint()
+            print 'Uploading files to resource {}'.format(resource.resource.title)
+            try:
+                if self.ActiveHydroshare is None or current_account_name != resource.hs_account_name:
+                    print 'Connecting to HydroShare account {}'.format(resource.hs_account_name)
+                    self.ConnectToHydroShareAccount(resource.hs_account_name)
+                    current_account_name = resource.hs_account_name
+
+                # Leave this out until metadata updating in HydroShare is fixed
+                # response = service.ActiveHydroshare.updateResourceMetadata(resource.resource)
+                self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
+            except Exception as e:
+                print e
+
     def ConnectToHydroShareAccount(self, account_name):
         connection_message = 'Unable to authenticate HydroShare account - please check your credentials'
-        resources = {}
+        connected = False
         try:
             account = self.HydroShareConnections[account_name]
             self.ActiveHydroshare = HydroShareUtility()
             if self.ActiveHydroshare.authenticate(**account.to_dict()):
-                resources = self.ActiveHydroshare.getAllResources()
                 connection_message = 'Successfully authenticated HydroShare account details'
-        except:
-            connection_message = 'Unable to authenticate HydroShare account - An exception occurred'
+                connected = True
+        except Exception as e:
+            connection_message = 'Unable to authenticate - An exception occurred: {}'.format(e)
 
         self.NotifyVisualH2O('logger', 'H2OService: ' + str(connection_message))
-        return resources
+        return connected
+
+    def FetchResources(self):
+        try:
+            resources = self.ActiveHydroshare.getAllResources()
+            return resources
+        except Exception as e:
+            connection_message = 'Unable to fetch resources - An exception occurred: {}'.format(e)
+            self.NotifyVisualH2O('logger', 'H2OService: ' + str(connection_message))
+            return None
 
     def StopActions(self):
         if self.ThreadedFunction is not None:
@@ -218,16 +149,21 @@ class H2OService:
         self.ThreadedFunction = Thread(target=self._threaded_dataset_generation)
         self.ThreadedFunction.start()
 
-    def UploadDatasetsToHydroShare(self, blocking=False):
+    def UploadGeneratedFiles(self, blocking=False):
+        if blocking:
+            return self._threaded_file_upload()
         if self.ThreadedFunction is not None and self.ThreadedFunction.is_alive():
             self.ThreadedFunction.join(3)
         self.ThreadKiller = ['Continue']
-        self.ThreadedFunction = Thread(target=self._threaded_dataset_generation)
+        self.ThreadedFunction = Thread(target=self._threaded_file_upload)
         self.ThreadedFunction.start()
 
     def NotifyVisualH2O(self, pub_key, *args):
         try:
-            if pub_key in self.Subscriptions and pub_key in H2OService.GUI_PUBLICATIONS.keys():
+            if not APP_SETTINGS.GUI_MODE and pub_key in H2OService.GUI_PUBLICATIONS.keys():
+                print H2OService.GUI_PUBLICATIONS[pub_key](*args)
+                # print 'Unable to publish GUI notification:\n    {}: {}'.format(pub_key, str(args))
+            elif pub_key in self.Subscriptions and pub_key in H2OService.GUI_PUBLICATIONS.keys():
                 result = H2OService.GUI_PUBLICATIONS[pub_key](*args)
                 pub.sendMessage(pub_key, **result)
         except Exception as e:
@@ -274,31 +210,9 @@ class H2OService:
         """
         :type template: ResourceTemplate
         """
-        print 'Creating reasource {}'.format(template)
-        pass
-
-    def _initialize_directories(self, directory_list):
-        for dir_name in directory_list:
-            if not os.path.exists(dir_name):
-                os.makedirs(dir_name)
-
-    # def GetValidHydroShareConnections(self):
-    #     valid_hydroshare_connections = {}
-    #     for name, account in self.HydroShareConnections.iteritems():
-    #         hydroshare = HydroShareUtility()
-    #         if hydroshare.authenticate(**account.to_dict()):
-    #             valid_hydroshare_connections[name] = account
-    #     return valid_hydroshare_connections
-
-    def GetValidOdmConnections(self):
-        valid_odm_connections = {}
-        for name, connection in self.DatabaseConnections.iteritems():
-            if connection.VerifyConnection():
-                valid_odm_connections[name] = connection
-        return valid_odm_connections
-
-    def _thread_checkpoint(self):
-        return self.ThreadKiller[0] == 'Continue'
+        print 'Creating resource {}'.format(template)
+        resource_id = self.ActiveHydroshare.createNewResource(template)
+        return resource_id
 
 
 class H2OLogger:
@@ -318,4 +232,3 @@ class H2OLogger:
         self.LogFile.write(message)
         if APP_SETTINGS.H2O_DEBUG and not (message is None or len(message) <= 0 or message.isspace()):
             pub.sendMessage('logger', message='H2OService: ' + str(message))
-

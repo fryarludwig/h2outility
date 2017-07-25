@@ -10,14 +10,15 @@ from multiprocessing import Process, Queue
 from time import sleep
 from sqlalchemy.exc import InvalidRequestError
 
-from HydroShareUtility import HydroShareResource
-from H2OServices import H2OSeries
+# from HydroShareUtility import HydroShareResource
+# from H2OServices import H2OSeries
 from GAMUTRawData.odmdata import Series
 from GAMUTRawData.odmdata import Site
 from GAMUTRawData.odmdata import SpatialReference
 from GAMUTRawData.odmdata import Qualifier
 from GAMUTRawData.odmdata import DataValue
 from GAMUTRawData.odmservices import ServiceManager
+from Common import *
 
 this_file = os.path.realpath(__file__)
 directory = os.path.dirname(os.path.dirname(this_file))
@@ -46,20 +47,20 @@ class FileDetails(object):
 
 class H2OManagedResource:
     def __init__(self, resource=None, odm_series=None, resource_id='', hs_account_name='', odm_db_name='',
-                 single_file=False, chunk_by_year=False, associated_files=None):
+                 single_file=False, chunk_years=False, associated_files=None):
         self.resource_id = resource_id  # type: str
         self.resource = resource   # type: HydroShareResource
         self.selected_series = odm_series if odm_series is not None else {}  # type: dict[int, H2OSeries]
         self.hs_account_name = hs_account_name  # type: str
         self.odm_db_name = odm_db_name  # type: str
         self.single_file = single_file  # type: bool
-        self.chunk_by_year = chunk_by_year  # type: bool
-        self.associated_files = associated_files if associated_files is not None else []  # type: list[FileDetails]
+        self.chunk_years = chunk_years  # type: bool
+        self.associated_files = associated_files if associated_files is not None else []  # type: list[str]
 
     def __dict__(self):
         return {'resource': self.resource, 'selected_series': self.selected_series,
                 'hs_account_name': self.hs_account_name, 'resource_id': self.resource_id,
-                'single_file': self.single_file, 'chunk_by_year': self.chunk_by_year,
+                'single_file': self.single_file, 'chunk_years': self.chunk_years,
                 'odm_db_name': self.odm_db_name, 'associated_files': self.associated_files}
 
     def __str__(self):
@@ -118,3 +119,337 @@ class OdmDatasetConnection:
     def ToDict(self):
         return {'engine': self.engine, 'user': self.user, 'password': self.password, 'address': self.address,
                 'db': self.database}
+
+
+# HEADER_LINE = '# '
+DELIMITER = '# {}'.format('-' * 90)
+CSV_FILENAME_YEAR = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}_{}.csv'
+CSV_FILENAME_DEFAULT = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}.csv'
+
+
+def createFile(filepath):
+    try:
+        print 'Creating new file {}'.format(filepath)
+        return open(filepath, 'w')
+    except Exception as e:
+        print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
+        return None
+
+def GetTimeSeriesDataframe(series_service, site_id, qc_id, source_id, methods, variables, year=None):
+    print 'Getting a dataframe'
+    csv_table = None
+    dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, variables, year)
+    if len(dataframe) == 0:
+        pass
+    elif qc_id == 0:
+        csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
+                                       columns="VariableCode", values="DataValue")
+        del dataframe
+    else:
+        csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
+                                       columns="VariableCode", values="DataValue")
+        del dataframe
+        # # Get the qualifiers that we use in this series, merge it with our DataValue set
+        # q_list = [[q.id, q.code, q.description] for q in series_service.get_qualifiers_by_series_id(
+        # series.id)]
+        # q_df = pandas.DataFrame(data=q_list, columns=self.qualifier_columns)
+        # dv_set = dv_raw.merge(q_df, how='left', on="QualifierID")  # type: pandas.DataFrame
+        # del dv_raw
+        # dv_set.set_index(self.csv_indexes, inplace=True)
+        #
+        # # Drop the columns that we aren't interested in, and correct any names afterwards
+        # for column in dv_set.columns.tolist():
+        #     if column not in self.csv_columns:
+        #         dv_set.drop(column, axis=1, inplace=True)
+        # dv_set.rename(columns={"DataValue": series.variable_code}, inplace=True)
+    #     This is where we do the qualifier things
+    return csv_table
+
+def BuildCsvFiles(series_service, series_list, chunk_years=False):
+    # type: (SeriesService, list[H2OSeries], bool) -> list[str]
+    file_list = []
+    base_name = '{}ODM_Series_'.format(APP_SETTINGS.DATASET_DIR)
+    variables = set([series.variable_id for series in series_list])
+    methods = set([series.method_id for series in series_list])
+    qc_ids = set([series.quality_control_level_id for series in series_list])
+    site_ids = set([series.site_id for series in series_list])
+    source_ids = set([series.source_id for series in series_list])
+
+    print 'Verifying lengths, sets, etc'
+    if len(qc_ids) != 1 or len(site_ids) != 1 or len(source_ids) != 1 and len(series_list) > 0:
+        print 'Cannot create a file that contains multiple QC, Site, or Source IDs'
+        print '{}: {}'.format(varname(qc_ids), qc_ids)
+        print '{}: {}'.format(varname(site_ids), site_ids)
+        print '{}: {}\n'.format(varname(source_ids), source_ids)
+        return file_list
+    else:
+        qc_id = qc_ids.pop()
+        site_id = site_ids.pop()
+        source_id = source_ids.pop()
+        site_code = series_list[0].site_code
+        qc_code = series_list[0].quality_control_level_code
+
+        if len(variables) == 1:
+            base_name += '{}_'.format(series_list[0].variable_code)
+        base_name += 'at_{}_Source_{}_QC_Code_{}'.format(site_code, source_id, qc_code)
+        if chunk_years:
+            base_name += '_{}'
+        base_name += '.csv'
+    if len(variables) == 0 or len(methods) == 0:
+        print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
+        return file_list
+
+    print 'Starting to generate dataframes'
+    if chunk_years:
+        years = GetSeriesYearRange(series_list)
+        for year in years:
+            # csv_name = CSV_FILENAME_YEAR.format(APP_SETTINGS.DATASET_DIR, site_code, source_id, qc_id, year)
+            csv_name = base_name.format(year)
+            print csv_name
+            dataframe = GetTimeSeriesDataframe(series_service, site_id, qc_id, source_id, methods, variables, year)
+            headers = BuildSeriesFileHeader()
+            if WriteSeriesToFile(csv_name, dataframe, headers):
+                file_list.append(csv_name)
+    else:
+        # csv_name = csv_name.format()
+        # csv_name = CSV_FILENAME_DEFAULT.format(APP_SETTINGS.DATASET_DIR, var_code, site_code, source_id, qc_id
+        print base_name
+        csv_name = base_name
+        dataframe = GetTimeSeriesDataframe(series_service, site_id, qc_id, source_id, methods, variables)
+        headers = BuildSeriesFileHeader()
+        if WriteSeriesToFile(csv_name, dataframe, headers):
+            file_list.append(csv_name)
+    return file_list
+
+
+def WriteSeriesToFile(csv_name, dataframe, headers):
+    file_out = createFile(csv_name)
+    if file_out is None:
+        print('Unable to create output file {}'.format(csv_name))
+        return False
+    else:
+        # Write data to CSV file
+        dataframe.to_csv(file_out)
+        file_out.close()
+    return True
+
+def GetSeriesYearRange(series_list):
+    start_date = None
+    end_date = None
+    for odm_series in series_list:
+        if start_date is None or start_date > odm_series.begin_date_time:
+            start_date = odm_series.begin_date_time
+        if end_date is None or end_date < odm_series.end_date_time:
+            end_date = odm_series.end_date_time
+    print range(start_date.year, end_date.year + 1)
+    return range(start_date.year, end_date.year + 1)
+
+
+def BuildSeriesFileHeader():
+    header = ''
+    return header
+
+
+
+def generateQC1Header():
+    """
+    :return: Returns a string to be inserted as the CSV file's header
+    :rtype: str
+    """
+    file_str = "# ------------------------------------------------------------------------------------------\n"
+    file_str += "# WARNING: The data are released on the condition that neither iUTAH nor any of its \n"
+    file_str += "# participants may be held liable for any damages resulting from their use. The following \n"
+    file_str += "# metadata describe the data in this file:\n"
+    file_str += "# ------------------------------------------------------------------------------------------\n"
+    file_str += "#\n"
+    file_str += "# Quality Control Level Information\n"
+    file_str += "# -----------------------------------------------\n"
+    file_str += "# These data have passed QA/QC procedures such as sensor calibration and \n"
+    file_str += "# visual inspection and removal of obvious errors. These data are approved \n"
+    file_str += "# by Technicians as the best available version of the data. See published\n"
+    file_str += "# script for correction steps specific to this data series. \n"
+    file_str += "#\n"
+    return file_str
+
+def generateQualifierHeader(qualifier_list):
+    """
+    :return: Returns a string to be inserted as the CSV qualifier header portion
+    :rtype: str
+    """
+    sorted_list = sorted(qualifier_list, key=lambda x: x[0])
+    file_str = "# Qualifier Information\n"
+    file_str += "# ----------------------------------\n"
+    file_str += "# Code   Description\n"
+    for q_id, code, description in sorted_list:
+        file_str += "# " + code.ljust(7) + description + "\n"
+    file_str += "#\n"
+    return file_str
+
+
+def getHeaderDisclaimer():
+    file_str = "# ------------------------------------------------------------------------------------------\n"
+    file_str += "# WARNING: These are raw and unprocessed data that have not undergone quality control.\n"
+    file_str += "# They are provisional and subject to revision. The data are released on the condition \n"
+    file_str += "# that neither iUTAH nor any of its participants may be held liable for any damages\n"
+    file_str += "# resulting from their use. The following metadata describe the data in this file:\n"
+    file_str += "# ------------------------------------------------------------------------------------------\n"
+    file_str += "#\n"
+    return file_str
+
+def generateSiteInformation(site, network):
+    """
+
+    :param site: Site for which to generate the header string
+    :type site: Site
+    :param network: Network for site (e.g. Logan, RedButte, etc)
+    :return: Header string
+    :rtype: str
+    """
+    file_str = ""
+    file_str += "# Site Information\n"
+    file_str += "# ----------------------------------\n"
+    file_str += "# Network: " + network + "\n"
+    file_str += "# SiteCode: " + str(site.code) + "\n"
+    file_str += "# SiteName: " + str(site.name) + "\n"
+    file_str += "# Latitude: " + str(site.latitude) + "\n"
+    file_str += "# Longitude: " + str(site.longitude) + "\n"
+    file_str += "# LatLonDatum: " + str(site.spatial_ref.srs_name) + "\n"
+    file_str += "# Elevation_m: " + str(site.elevation_m) + "\n"
+    file_str += "# ElevationDatum: " + str(site.vertical_datum) + "\n"
+    file_str += "# State: " + str(site.state) + "\n"
+    file_str += "# County: " + str(site.county) + "\n"
+    file_str += "# Comments: " + str(site.comments) + "\n"
+    file_str += "# SiteType: " + str(site.type) + "\n"
+    file_str += "#\n"
+    return file_str
+
+
+class SourceInfo:
+    def __init__(self, use_citation=True):
+        self.organization = ""
+        self.sourceDescription = ""
+        self.sourceLink = ""
+        self.contactName = ""
+        self.phone = ""
+        self.email = ""
+        self.citation = ""
+        self.use_citation = use_citation
+
+    def setSourceInfo(self, org, srcDesc, srcLnk, cntctName, phn, email, citn):
+        self.organization = org
+        self.sourceDescription = srcDesc
+        self.sourceLink = srcLnk
+        self.contactName = cntctName
+        self.phone = phn
+        self.email = email
+        self.citation = citn
+
+    def outputSourceInfo(self):
+        outputStr = "# Source Information\n# ------------------\n"
+        outputStr += self.sourceOutHelper("Organization", self.organization)
+        outputStr += self.sourceOutHelper("SourceDescription", self.sourceDescription)
+        outputStr += self.sourceOutHelper("SourceLink", self.sourceLink)
+        outputStr += self.sourceOutHelper("ContactName", self.contactName)
+        outputStr += self.sourceOutHelper("Phone", self.phone)
+        outputStr += self.sourceOutHelper("Email", self.email)
+        if self.use_citation:
+            outputStr += self.sourceOutHelper("Citation", self.citation)
+        return outputStr
+
+    def sourceOutHelper(self, title, value):
+        return "# " + title + ": " + value + "\n"
+
+
+class ExpandedVariableData:
+    def __init__(self, var, method):
+        self.varCode = var.code
+        self.varName = var.name
+        self.valueType = var.value_type
+        self.dataType = var.data_type
+        self.gralCategory = var.general_category
+        self.sampleMedium = var.sample_medium
+        self.varUnitsName = var.variable_unit.name
+        self.varUnitsType = var.variable_unit.type
+        self.varUnitsAbbr = var.variable_unit.abbreviation
+        self.noDV = int(var.no_data_value) if var.no_data_value.is_integer() else var.no_data_value
+        self.timeSupport = var.time_support
+        self.timeSupportUnitsAbbr = var.time_unit.abbreviation
+        self.timeSupportUnitsName = var.time_unit.name
+        self.timeSupportUnitsType = var.time_unit.type
+        self.methodDescription = method.description
+        self.methodLink = method.link if method.link is not None else "None"
+        if not self.methodLink[-1:].isalnum():
+            self.methodLink = self.methodLink[:-1]
+
+    def printToFile(self):
+        formatted = ""
+        formatted += "# Variable and Method Information\n"
+        formatted += "# ---------------------------\n"
+        formatted += self.formatHelper("VariableCode", self.varCode)
+        formatted += self.formatHelper("VariableName", self.varName)
+        formatted += self.formatHelper("ValueType", self.valueType)
+        formatted += self.formatHelper("DataType", self.dataType)
+        formatted += self.formatHelper("GeneralCategory", self.gralCategory)
+        formatted += self.formatHelper("SampleMedium", self.sampleMedium)
+        formatted += self.formatHelper("VariableUnitsName", self.varUnitsName)
+        formatted += self.formatHelper("VariableUnitsType", self.varUnitsType)
+        formatted += self.formatHelper("VariableUnitsAbbreviation", self.varUnitsAbbr)
+        formatted += self.formatHelper("NoDataValue", self.noDV)
+        formatted += self.formatHelper("TimeSupport", self.timeSupport)
+        formatted += self.formatHelper("TimeSupportUnitsAbbreviation", self.timeSupportUnitsAbbr)
+        formatted += self.formatHelper("TimeSupportUnitsType", self.timeSupportUnitsType)
+        formatted += self.formatHelper("TimeSupportUnitsName", self.timeSupportUnitsName)
+        formatted += self.formatHelper("MethodDescription", self.methodDescription)
+        formatted += self.formatHelper("MethodLink", self.methodLink)
+        return formatted
+
+    def formatHelper(self, title, var):
+        formatted = "# " + title + ": " + str(var) + "\n"
+        return formatted
+
+
+class CompactVariableData:
+    def __init__(self):
+        self.var_dict = {}
+        self.method_dict = {}
+
+    def addData(self, var, method):
+        self.var_dict[var.code] = (var, method)
+
+    def printToFile(self, vars_to_print):
+        if not isinstance(vars_to_print, str) or len(vars_to_print) == 0:
+            return ""
+        formatted = ""
+        formatted += "# Variable and Method Information\n"
+        formatted += "# ---------------------------\n"
+        for variable_code in vars_to_print:
+            if variable_code not in self.var_dict:
+                continue
+            variable, method = self.var_dict[variable_code]
+            if method.link is None:
+                tempVarMethodLink = "None"
+            else:
+                tempVarMethodLink = method.link if method.link[-1:].isalnum() else method.link[-1:]
+
+            formatted += "# "
+            formatted += self.formatHelper("VariableCode", variable.code)
+            formatted += self.formatHelper("VariableName", variable.name)
+            formatted += self.formatHelper("ValueType", variable.value_type)
+            formatted += self.formatHelper("DataType", variable.data_type)
+            formatted += self.formatHelper("GeneralCategory", variable.general_category)
+            formatted += self.formatHelper("SampleMedium", variable.sample_medium)
+            formatted += self.formatHelper("VariableUnitsName", variable.variable_unit.name)
+            formatted += self.formatHelper("VariableUnitsType", variable.variable_unit.type)
+            formatted += self.formatHelper("VariableUnitsAbbreviation", variable.variable_unit.abbreviation)
+            formatted += self.formatHelper("NoDataValue", variable.no_data_value)
+            formatted += self.formatHelper("TimeSupport", variable.time_support)
+            formatted += self.formatHelper("TimeSupportUnitsAbbreviation", variable.time_unit.abbreviation)
+            formatted += self.formatHelper("TimeSupportUnitsName", variable.time_unit.name)
+            formatted += self.formatHelper("TimeSupportUnitsType", variable.time_unit.type)
+            formatted += self.formatHelper("MethodDescription", method.description)
+            formatted += self.formatHelper("MethodLink", tempVarMethodLink)[:-2] + "\n"
+        return formatted
+
+    def formatHelper(self, title, var):
+        formatted = title + ": " + str(var) + " | "
+        return formatted

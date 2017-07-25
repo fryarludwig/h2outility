@@ -5,10 +5,13 @@
 import wx
 import wx.xrc
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility
-from GAMUTRawData.CSVDataFileGenerator import OdmDatabaseDetails
 from pubsub import pub
 from InputValidator import *
 
+
+# noinspection PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,
+# PyPropertyAccess
+# noinspection PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class HydroShareAccountDialog(wx.Dialog):
     def __init__(self, parent, accounts, selected=0):
         wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=u"HydroShare Account Details", pos=wx.DefaultPosition, size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)

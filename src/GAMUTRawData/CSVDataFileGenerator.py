@@ -30,13 +30,6 @@ UPDATE_CACHE = False
 
 issues = []
 
-DB_CODE_LOOKUP = {
-    'LR': 'iUTAH_Logan_OD',
-    'BSF': 'iUTAH_Logan_OD',
-    'PR': 'iUTAH_Provo_OD',
-    'RB': 'iUTAH_RedButte_OD'
-}
-
 QC1_RESOURCE_ABSTRACT = 'This dataset contains quality control level 1 (QC1) data for all of the variables ' \
                         'measured for the iUTAH GAMUT Network {site_name} ({site_code}). Each file contains all ' \
                         'available QC1 data for a specific variable. Files will be updated as new data become ' \

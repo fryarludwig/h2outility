@@ -1,11 +1,13 @@
 import wx
 import wx.xrc
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility
-from GAMUTRawData.CSVDataFileGenerator import OdmDatabaseDetails
 from InputValidator import *
 from pubsub import pub
 
 
+# noinspection PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,
+# PyPropertyAccess
+# noinspection PyPropertyAccess,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class DatabaseConnectionDialog(wx.Dialog):
     def __init__(self, parent, connections, selected=0):
         wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=u'Modify Database Connections', pos=wx.DefaultPosition,

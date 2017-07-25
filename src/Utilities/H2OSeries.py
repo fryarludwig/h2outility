@@ -14,10 +14,9 @@ from exceptions import IOError
 
 from GAMUTRawData.odmservices import ServiceManager
 from GAMUTRawData.odmdata import Series
-# from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection
+from Utilities.DatasetUtilities import H2OManagedResource
 from HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate
 
-from GAMUTRawData.CSVDataFileGenerator import *
 from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException
 from Common import *
 
@@ -59,12 +58,11 @@ class H2OSeries:
                                other.get('MethodID', None), other.get('SourceID', None),
                                other.get('QualityControlLevelCode', None))
             if other_tuple is None:
-                print('Object types are not similar enough to match anything. "other" was type {}'.format(type(other)))
+                print('Type {} cannot be compared to an H2OSeries object.'.format(type(other)))
             return comp_tuple == other_tuple
 
     def __ne__(self, other):
         return not (self == other)
-
 
 
 class OdmSeriesHelper:
@@ -109,6 +107,16 @@ class OdmSeriesHelper:
                          QualityControlLevelCode=series.quality_control_level_code)
 
     @staticmethod
+    def GetOdmSeriesFromH2OSeries(series_service, h2o_series):
+        try:
+            return series_service.get_series_from_filter(h2o_series.SiteID, h2o_series.VariableID,
+                                                         h2o_series.QualityControlLevelID, h2o_series.SourceID,
+                                                         h2o_series.MethodID)
+        except Exception as e:
+            print 'Error while attempting to fetch ODM series: {}'.format(e)
+            return None
+
+    @staticmethod
     def HashOdmSeriesObject(series):
         """
         :type series: Series
@@ -116,26 +124,24 @@ class OdmSeriesHelper:
         return hash(str(series))
 
     @staticmethod
-    def PopulateH2OSeriesFromString(series_string):
-        regex_results = OdmSeriesHelper.RE_STRING_PARSER.match(series_string)
-        if regex_results is not None:
-            return H2OSeries(**regex_results.groupdict())
-        else:
-            return None
-
-    @staticmethod
-    def DetermineForcedSeriesChunking(series_list):
+    def DetermineForcedSeriesChunking(resource):
         """
 
-        :type series_list: list[H2OSeries]
+        :type resource: H2OManagedResource
+        :returns list[list[H2OSeries]]
         """
-        csv_files = {}
-        for series in series_list:
-            series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)
-            if series_tuple not in csv_files.keys():
-                csv_files[series_tuple] = []
-            csv_files[series_tuple].append(series)
-        return csv_files
+        chunks = {}
+
+        if resource.single_file:  # If we should group into the fewest possible files
+            for series in resource.selected_series.itervalues():
+                series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)
+                if series_tuple not in chunks.keys():
+                    print type(series)
+                    chunks[series_tuple] = []
+                chunks[series_tuple].append(series)
+            return chunks.values()
+        else:  # If we should group each into its own file
+            return [[series] for series in resource.selected_series.itervalues()]
 
     @staticmethod
     def createFile(filepath):

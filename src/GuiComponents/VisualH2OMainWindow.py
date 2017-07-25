@@ -36,11 +36,16 @@ class CHOICE_DEFAULTS:
 HS_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id)
 H2O_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.resource.title, resource.id)
 
+
+# noinspection PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,
+# PyUnusedLocal
+# noinspection PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class VisualH2OWindow(wx.Frame):
     def __init__(self, parent, id, title):
         ###########################################
         # Declare/populate variables, wx objects  #
         ###########################################
+        APP_SETTINGS.GUI_MODE = True
         self.MAIN_WINDOW_SIZE = (940, 860)
         self.MONOSPACE = wx.Font(9, 75, 90, 90, False, "Inconsolata")
         self._setup_subscriptions()
@@ -72,11 +77,6 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.LoadData()
         self.UpdateControls()
 
-        if APP_SETTINGS.H2O_DEBUG:
-            result = HydroShareResourceTemplateDialog(self, self.H2OService.ResourceTemplates,
-                                                      create_selected=True).ShowModal()
-                                                      # create_selected=False).ShowModal()
-
     def _setup_subscriptions(self):
         SUBSCRIPTIONS = [
             (self.OnDeleteResourceTemplate, 'hs_resource_remove'),
@@ -107,7 +107,6 @@ class VisualH2OWindow(wx.Frame):
             self.status_gauge = progress if 100 >= progress >= 0 else progress % 100
         WxHelper.UpdateChoiceControl(self.database_connection_choice, self._get_database_choices())
         WxHelper.UpdateChoiceControl(self.hydroshare_account_choice, self._get_hydroshare_choices())
-        # WxHelper.UpdateChoiceControl(self.hydroshare_resources_choice_delete_me, self._get_dataset_choices())
 
     def OnDeleteResourceTemplate(self, result=None):
         if result is None:
@@ -131,10 +130,9 @@ class VisualH2OWindow(wx.Frame):
             return
         template = ResourceTemplate(result)
         if template is not None:
-            self.H2OService.CreateResourceFromTemplate(template)
-        self.UpdateControls()
-        # self.H2OService.SaveData()
-        # self._update_target_choices()
+            resource_id = self.H2OService.CreateResourceFromTemplate(template)
+            self._update_target_choices()
+            self._set_selected_resource_by_id(resource_id)
 
     def OnRemoveDatabaseAuth(self, result=None):
         if result is None:
@@ -272,7 +270,10 @@ class VisualH2OWindow(wx.Frame):
 
     def SetHydroShareConnection(self, account_name):
         busy = wx.BusyInfo("Loading HydroShare account information for {}".format(account_name))
-        self._resources = self.H2OService.ConnectToHydroShareAccount(account_name)
+        if self.H2OService.ConnectToHydroShareAccount(account_name):
+            self._resources = self.H2OService.FetchResources()
+        else:
+            self._resources = None
 
     def on_database_chosen(self, event):
         if event.GetSelection() > 0:
@@ -343,24 +344,25 @@ class VisualH2OWindow(wx.Frame):
 
     def _category_selection(self, event, direction, control, curr_index):
         category, action = direction.split(u': ')
-        check_series = OdmSeriesHelper.PopulateH2OSeriesFromString(control.Items[curr_index])
-
-        if check_series is None:
-            print('Unable to parse information for {}'.format(control.Items[curr_index]))
-            return
-
-        for ctrl_index in range(0, len(control.Items)):
-            temp_series = OdmSeriesHelper.PopulateH2OSeriesFromString(control.Items[ctrl_index])
-            if OdmSeriesHelper.MATCH_ON_ATTRIBUTE[category](temp_series, check_series):
-                if action == 'Select All':
-                    control.Select(ctrl_index)
-                elif action == 'Deselect All':
-                    control.Deselect(ctrl_index)
+        # TODO: Fix this to work with the grid object
+        # check_series = OdmSeriesHelper.PopulateH2OSeriesFromString(control.Items[curr_index])
+        #
+        # if check_series is None:
+        #     print('Unable to parse information for {}'.format(control.Items[curr_index]))
+        #     return
+        #
+        # for ctrl_index in range(0, len(control.Items)):
+        #     temp_series = OdmSeriesHelper.PopulateH2OSeriesFromString(control.Items[ctrl_index])
+        #     if OdmSeriesHelper.MATCH_ON_ATTRIBUTE[category](temp_series, check_series):
+        #         if action == 'Select All':
+        #             control.Select(ctrl_index)
+        #         elif action == 'Deselect All':
+        #             control.Deselect(ctrl_index)
 
     def _get_current_series_ids_from_resource(self, resource):
         if isinstance(resource, H2OManagedResource):
             return [series.SeriesID for series in self.h2o_series_dict.itervalues() if series in
-                   resource.selected_series.itervalues()]
+                    resource.selected_series.itervalues()]
         else:
             print 'Resource is unmanaged - there are no associated series'
             return []
@@ -407,7 +409,7 @@ class VisualH2OWindow(wx.Frame):
                                      hs_account_name=self.hydroshare_account_choice.GetStringSelection(),
                                      odm_db_name=self.database_connection_choice.GetStringSelection(),
                                      single_file=not self.chunk_by_series_checkbox.IsChecked(),
-                                     chunk_by_year=self.chunk_by_year_checkbox.Value,
+                                     chunk_years=self.chunk_by_year_checkbox.Value,
                                      associated_files=[])
 
         # if we aren't making a new dataset, let's remove the old one from the dictionary
@@ -437,6 +439,7 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.SaveData()
         self.H2OService.LoadData()
         self.H2OService.GenerateDatasetFiles()
+        self.H2OService.UploadGeneratedFiles()
 
     def OnStopScriptClicked(self, event):
         self.OnPrintLog('Stopping the script... This may take few moments')
@@ -481,7 +484,7 @@ class VisualH2OWindow(wx.Frame):
                     self.available_series_grid.AppendSeries(series)
 
             self.chunk_by_series_checkbox.SetValue(wx.CHK_CHECKED if not resource.single_file else wx.CHK_UNCHECKED)
-            self.chunk_by_year_checkbox.Value = resource.chunk_by_year
+            self.chunk_by_year_checkbox.Value = resource.chunk_years
 
     def FillResourceFields(self, resource):
         if resource is None:

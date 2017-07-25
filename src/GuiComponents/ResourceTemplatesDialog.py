@@ -5,12 +5,14 @@
 import wx
 import wx.xrc
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility
-from GAMUTRawData.CSVDataFileGenerator import OdmDatabaseDetails
 from WxUtilities import *
 from pubsub import pub
 from InputValidator import *
 
 
+# noinspection PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,
+# PyPropertyAccess
+# noinspection PyPropertyAccess,PyPropertyAccess,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class HydroShareResourceTemplateDialog(wx.Dialog):
     def __init__(self, parent, templates, selected=0, create_selected=False):
         title = u'Create a new HydroShare Resource' if create_selected else u"Manage HydroShare Resource Templates"
