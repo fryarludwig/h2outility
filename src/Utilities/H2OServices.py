@@ -36,8 +36,7 @@ class H2OService:
 
     def __init__(self, hydroshare_connections=None, odm_connections=None, resource_templates=None, subscriptions=None,
                  managed_resources=None):
-        self.HydroShareConnections = hydroshare_connections if hydroshare_connections is not None else {}  # type:
-        # dict[str, HydroShareAccountDetails]
+        self.HydroShareConnections = hydroshare_connections if hydroshare_connections is not None else {}  # type: dict[str, HydroShareAccountDetails]
         self.DatabaseConnections = odm_connections if odm_connections is not None else {}  # type: dict[str, OdmDatasetConnection]
         self.ResourceTemplates = resource_templates if resource_templates is not None else {}  # type: dict[str, ResourceTemplate]
         self.ManagedResources = managed_resources if managed_resources is not None else {}  # type: dict[str, H2OManagedResource]
@@ -105,8 +104,7 @@ class H2OService:
                     self.ConnectToHydroShareAccount(resource.hs_account_name)
                     current_account_name = resource.hs_account_name
 
-                # Leave this out until metadata updating in HydroShare is fixed
-                # response = service.ActiveHydroshare.updateResourceMetadata(resource.resource)
+                response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
                 self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
             except Exception as e:
                 print e
@@ -162,7 +160,6 @@ class H2OService:
         try:
             if not APP_SETTINGS.GUI_MODE and pub_key in H2OService.GUI_PUBLICATIONS.keys():
                 print H2OService.GUI_PUBLICATIONS[pub_key](*args)
-                # print 'Unable to publish GUI notification:\n    {}: {}'.format(pub_key, str(args))
             elif pub_key in self.Subscriptions and pub_key in H2OService.GUI_PUBLICATIONS.keys():
                 result = H2OService.GUI_PUBLICATIONS[pub_key](*args)
                 pub.sendMessage(pub_key, **result)
@@ -211,8 +208,8 @@ class H2OService:
         :type template: ResourceTemplate
         """
         print 'Creating resource {}'.format(template)
-        resource_id = self.ActiveHydroshare.createNewResource(template)
-        return resource_id
+        resource = self.ActiveHydroshare.createNewResource(template)
+        return resource
 
 
 class H2OLogger:
@@ -230,5 +227,5 @@ class H2OLogger:
     def write(self, message):
         self.terminal.write(message)
         self.LogFile.write(message)
-        if APP_SETTINGS.H2O_DEBUG and not (message is None or len(message) <= 0 or message.isspace()):
+        if APP_SETTINGS.H2O_DEBUG and APP_SETTINGS.VERBOSE and not (message is None or len(message) <= 0):
             pub.sendMessage('logger', message='H2OService: ' + str(message))

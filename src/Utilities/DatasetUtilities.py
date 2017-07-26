@@ -17,7 +17,7 @@ from GAMUTRawData.odmdata import Site
 from GAMUTRawData.odmdata import SpatialReference
 from GAMUTRawData.odmdata import Qualifier
 from GAMUTRawData.odmdata import DataValue
-from GAMUTRawData.odmservices import ServiceManager
+from GAMUTRawData.odmservices import ServiceManager, SeriesService
 from Common import *
 
 this_file = os.path.realpath(__file__)
@@ -135,38 +135,34 @@ def createFile(filepath):
         print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
         return None
 
-def GetTimeSeriesDataframe(series_service, site_id, qc_id, source_id, methods, variables, year=None):
-    print 'Getting a dataframe'
+
+def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, year=None):
     csv_table = None
     dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, variables, year)
     if len(dataframe) == 0:
         pass
-    elif qc_id == 0:
+    elif qc_id == 0 or len(variables) != 1 or len(methods) != 1:
         csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
                                        columns="VariableCode", values="DataValue")
         del dataframe
     else:
-        csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
-                                       columns="VariableCode", values="DataValue")
+        # Get the qualifiers that we use in this series, merge it with our DataValue set
+        qualifier_columns = ["QualifierID", "QualifierCode", "QualifierDescription"]
+        q_list = [[q.id, q.code, q.description] for q in
+                  series_service.get_qualifiers_by_series_details(site_id, qc_id, source_id, methods[0], variables[0])]
+        q_df = pandas.DataFrame(data=q_list, columns=qualifier_columns)
+        csv_table = dataframe.merge(q_df, how='left', on="QualifierID")  # type: pandas.DataFrame
         del dataframe
-        # # Get the qualifiers that we use in this series, merge it with our DataValue set
-        # q_list = [[q.id, q.code, q.description] for q in series_service.get_qualifiers_by_series_id(
-        # series.id)]
-        # q_df = pandas.DataFrame(data=q_list, columns=self.qualifier_columns)
-        # dv_set = dv_raw.merge(q_df, how='left', on="QualifierID")  # type: pandas.DataFrame
-        # del dv_raw
-        # dv_set.set_index(self.csv_indexes, inplace=True)
-        #
-        # # Drop the columns that we aren't interested in, and correct any names afterwards
-        # for column in dv_set.columns.tolist():
-        #     if column not in self.csv_columns:
-        #         dv_set.drop(column, axis=1, inplace=True)
-        # dv_set.rename(columns={"DataValue": series.variable_code}, inplace=True)
-    #     This is where we do the qualifier things
+        csv_table.set_index(["LocalDateTime", "UTCOffset", "DateTimeUTC"], inplace=True)
+        for column in csv_table.columns.tolist():
+            if column not in ["DataValue", "CensorCode", "QualifierCode"]:
+                csv_table.drop(column, axis=1, inplace=True)
+        csv_table.rename(columns={"DataValue": series_list[0].variable.code}, inplace=True)
     return csv_table
 
+
 def BuildCsvFiles(series_service, series_list, chunk_years=False):
-    # type: (SeriesService, list[H2OSeries], bool) -> list[str]
+    # type: (SeriesService, list[Series], bool) -> list[str]
     file_list = []
     base_name = '{}ODM_Series_'.format(APP_SETTINGS.DATASET_DIR)
     variables = set([series.variable_id for series in series_list])
@@ -175,7 +171,6 @@ def BuildCsvFiles(series_service, series_list, chunk_years=False):
     site_ids = set([series.site_id for series in series_list])
     source_ids = set([series.source_id for series in series_list])
 
-    print 'Verifying lengths, sets, etc'
     if len(qc_ids) != 1 or len(site_ids) != 1 or len(source_ids) != 1 and len(series_list) > 0:
         print 'Cannot create a file that contains multiple QC, Site, or Source IDs'
         print '{}: {}'.format(varname(qc_ids), qc_ids)
@@ -183,15 +178,15 @@ def BuildCsvFiles(series_service, series_list, chunk_years=False):
         print '{}: {}\n'.format(varname(source_ids), source_ids)
         return file_list
     else:
-        qc_id = qc_ids.pop()
-        site_id = site_ids.pop()
-        source_id = source_ids.pop()
-        site_code = series_list[0].site_code
-        qc_code = series_list[0].quality_control_level_code
+        site = series_list[0].site                  # type: Site
+        source = series_list[0].source              # type: Source
+        qc = series_list[0].quality_control_level   # type: QualityControlLevel
+        variables = list(variables)
+        methods = list(methods)
 
         if len(variables) == 1:
             base_name += '{}_'.format(series_list[0].variable_code)
-        base_name += 'at_{}_Source_{}_QC_Code_{}'.format(site_code, source_id, qc_code)
+        base_name += 'at_{}_Source_{}_QC_Code_{}'.format(site.code, source.id, qc.code)
         if chunk_years:
             base_name += '_{}'
         base_name += '.csv'
@@ -199,26 +194,21 @@ def BuildCsvFiles(series_service, series_list, chunk_years=False):
         print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
         return file_list
 
-    print 'Starting to generate dataframes'
+    print 'Starting to generate files'
     if chunk_years:
         years = GetSeriesYearRange(series_list)
         for year in years:
-            # csv_name = CSV_FILENAME_YEAR.format(APP_SETTINGS.DATASET_DIR, site_code, source_id, qc_id, year)
-            csv_name = base_name.format(year)
-            print csv_name
-            dataframe = GetTimeSeriesDataframe(series_service, site_id, qc_id, source_id, methods, variables, year)
-            headers = BuildSeriesFileHeader()
-            if WriteSeriesToFile(csv_name, dataframe, headers):
-                file_list.append(csv_name)
+            name_with_year = base_name.format(year)
+            dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
+            headers = BuildSeriesFileHeader(series_list, site, source)
+            if WriteSeriesToFile(name_with_year, dataframe, headers):
+                file_list.append(name_with_year)
     else:
-        # csv_name = csv_name.format()
-        # csv_name = CSV_FILENAME_DEFAULT.format(APP_SETTINGS.DATASET_DIR, var_code, site_code, source_id, qc_id
-        print base_name
-        csv_name = base_name
-        dataframe = GetTimeSeriesDataframe(series_service, site_id, qc_id, source_id, methods, variables)
-        headers = BuildSeriesFileHeader()
-        if WriteSeriesToFile(csv_name, dataframe, headers):
-            file_list.append(csv_name)
+        print 'Dataframe for {}'.format(variables)
+        dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables)
+        headers = BuildSeriesFileHeader(series_list, site, source)
+        if WriteSeriesToFile(base_name, dataframe, headers):
+            file_list.append(base_name)
     return file_list
 
 
@@ -229,6 +219,7 @@ def WriteSeriesToFile(csv_name, dataframe, headers):
         return False
     else:
         # Write data to CSV file
+        file_out.write(headers)
         dataframe.to_csv(file_out)
         file_out.close()
     return True
@@ -241,74 +232,42 @@ def GetSeriesYearRange(series_list):
             start_date = odm_series.begin_date_time
         if end_date is None or end_date < odm_series.end_date_time:
             end_date = odm_series.end_date_time
-    print range(start_date.year, end_date.year + 1)
     return range(start_date.year, end_date.year + 1)
 
 
-def BuildSeriesFileHeader():
+def BuildSeriesFileHeader(series_list, site, source):
+    """
+
+    :type series_service: SeriesService
+    """
     header = ''
+
+    if len(series_list) == 1:
+        var_data = ExpandedVariableData(series_list[0].variable, series_list[0].method)
+    else:
+        var_data = CompactVariableData()
+        for series in series_list:
+            var_data.addData(series.variable, series.method)
+
+    source_info = SourceInfo()
+    source_info.setSourceInfo(source.organization, source.description, source.link, source.contact_name, source.phone,
+                              source.email, source.citation)
+    header += generateSiteInformation(site)
+    header += var_data.printToFile() + '#\n'
+    header += source_info.outputSourceInfo() + '#\n'
     return header
 
 
-
-def generateQC1Header():
-    """
-    :return: Returns a string to be inserted as the CSV file's header
-    :rtype: str
-    """
-    file_str = "# ------------------------------------------------------------------------------------------\n"
-    file_str += "# WARNING: The data are released on the condition that neither iUTAH nor any of its \n"
-    file_str += "# participants may be held liable for any damages resulting from their use. The following \n"
-    file_str += "# metadata describe the data in this file:\n"
-    file_str += "# ------------------------------------------------------------------------------------------\n"
-    file_str += "#\n"
-    file_str += "# Quality Control Level Information\n"
-    file_str += "# -----------------------------------------------\n"
-    file_str += "# These data have passed QA/QC procedures such as sensor calibration and \n"
-    file_str += "# visual inspection and removal of obvious errors. These data are approved \n"
-    file_str += "# by Technicians as the best available version of the data. See published\n"
-    file_str += "# script for correction steps specific to this data series. \n"
-    file_str += "#\n"
-    return file_str
-
-def generateQualifierHeader(qualifier_list):
-    """
-    :return: Returns a string to be inserted as the CSV qualifier header portion
-    :rtype: str
-    """
-    sorted_list = sorted(qualifier_list, key=lambda x: x[0])
-    file_str = "# Qualifier Information\n"
-    file_str += "# ----------------------------------\n"
-    file_str += "# Code   Description\n"
-    for q_id, code, description in sorted_list:
-        file_str += "# " + code.ljust(7) + description + "\n"
-    file_str += "#\n"
-    return file_str
-
-
-def getHeaderDisclaimer():
-    file_str = "# ------------------------------------------------------------------------------------------\n"
-    file_str += "# WARNING: These are raw and unprocessed data that have not undergone quality control.\n"
-    file_str += "# They are provisional and subject to revision. The data are released on the condition \n"
-    file_str += "# that neither iUTAH nor any of its participants may be held liable for any damages\n"
-    file_str += "# resulting from their use. The following metadata describe the data in this file:\n"
-    file_str += "# ------------------------------------------------------------------------------------------\n"
-    file_str += "#\n"
-    return file_str
-
-def generateSiteInformation(site, network):
+def generateSiteInformation(site):
     """
 
     :param site: Site for which to generate the header string
     :type site: Site
-    :param network: Network for site (e.g. Logan, RedButte, etc)
-    :return: Header string
     :rtype: str
     """
     file_str = ""
     file_str += "# Site Information\n"
     file_str += "# ----------------------------------\n"
-    file_str += "# Network: " + network + "\n"
     file_str += "# SiteCode: " + str(site.code) + "\n"
     file_str += "# SiteName: " + str(site.name) + "\n"
     file_str += "# Latitude: " + str(site.latitude) + "\n"
@@ -414,18 +373,15 @@ class CompactVariableData:
         self.method_dict = {}
 
     def addData(self, var, method):
-        self.var_dict[var.code] = (var, method)
+        self.var_dict[var] = method
 
-    def printToFile(self, vars_to_print):
-        if not isinstance(vars_to_print, str) or len(vars_to_print) == 0:
-            return ""
+    def printToFile(self):
+        # if not isinstance(vars_to_print, str) or len(vars_to_print) == 0:
+        #     return ""
         formatted = ""
         formatted += "# Variable and Method Information\n"
         formatted += "# ---------------------------\n"
-        for variable_code in vars_to_print:
-            if variable_code not in self.var_dict:
-                continue
-            variable, method = self.var_dict[variable_code]
+        for variable, method in self.var_dict.iteritems():
             if method.link is None:
                 tempVarMethodLink = "None"
             else:

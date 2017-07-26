@@ -136,7 +136,6 @@ class OdmSeriesHelper:
             for series in resource.selected_series.itervalues():
                 series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)
                 if series_tuple not in chunks.keys():
-                    print type(series)
                     chunks[series_tuple] = []
                 chunks[series_tuple].append(series)
             return chunks.values()

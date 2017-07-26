@@ -19,7 +19,6 @@ from EditAccountsDialog import HydroShareAccountDialog
 from WxUtilities import WxHelper, Orientation, PADDING, ALIGN
 from ResourceTemplatesDialog import HydroShareResourceTemplateDialog
 from InputValidator import *
-from time import sleep
 
 service_manager = ServiceManager()
 
@@ -125,14 +124,15 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.SaveData()
 
     def OnCreateResource(self, result=None):
-        print 'Creating resource!'
         if result is None:
             return
         template = ResourceTemplate(result)
         if template is not None:
-            resource_id = self.H2OService.CreateResourceFromTemplate(template)
-            self._update_target_choices()
-            self._set_selected_resource_by_id(resource_id)
+            resource = self.H2OService.CreateResourceFromTemplate(template)
+            self._resources[resource.id] = resource
+            self.hs_resource_choice.Append(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
+            self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
+            self.FillResourceFields(resource)
 
     def OnRemoveDatabaseAuth(self, result=None):
         if result is None:

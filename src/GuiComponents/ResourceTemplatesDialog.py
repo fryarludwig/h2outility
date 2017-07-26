@@ -247,7 +247,7 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
             template = self.templates[value]
             if not self.create_new:
                 self.template_name_input.SetValue(template.template_name)
-            self.resource_name_input.SetValue(template.name_prefix)
+            self.resource_name_input.SetValue(template.title)
             self.resource_abstract_input.SetValue(template.abstract)
             self.award_number_input.SetValue(template.award_number)
             self.award_title_input.SetValue(template.award_title)

@@ -94,12 +94,3 @@ def print_recursive(value, indent=0):
     return ''
 
 APP_SETTINGS = Common(sys.argv)
-
-"""
-Run this file to perform quick, trivial tests
-"""
-if __name__ == '__main__':
-    print '-----------\nRunning H2O Common debugging tests\n-----------'
-    PRINT_NAME_VALUE(varname(APP_SETTINGS), APP_SETTINGS)
-    APP_SETTINGS.dump_settings()
-    print '-----------\nTests Completed\n-----------'

@@ -225,11 +225,11 @@ class SeriesService():
         subquery = self._edit_session.query(DataValue.qualifier_id).outerjoin(
                 Series.data_values).filter(Series.site_id == site_id,
                                            DataValue.site_id == site_id,
-                                           DataValue.variable_id.in_(var_ids),
+                                           DataValue.variable_id == var_ids,
                                            DataValue.variable_id == Variable.id,
                                            DataValue.quality_control_level_id == qc_id,
                                            DataValue.source_id == source_id,
-                                           DataValue.method_id.in_(method_id),
+                                           DataValue.method_id == method_id,
                                            DataValue.qualifier_id != None).distinct().subquery()
         return self._edit_session.query(Qualifier).join(subquery).distinct().all()
 
