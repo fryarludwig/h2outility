@@ -1,3 +1,5 @@
+from functools import partial
+
 import wx
 from InputValidator import *
 import wx.grid
@@ -24,6 +26,15 @@ class WxHelper:
                   ('QC Code', 50),
                   ('Source Description', 150),
                   ('Method Description', 150)]
+
+        SERIES_COL = {
+            'Site': 1,
+            'Variable': 3,
+            'QC Code': 4,
+            'Source': 5,
+            'Method': 6
+        }
+
 
         def __init__(self, app, parent, font=wx.SMALL_FONT, max_size=wx.DefaultSize, min_size=wx.DefaultSize):
             wx.grid.Grid.__init__(self, parent, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.SIMPLE_BORDER)
@@ -91,21 +102,41 @@ class WxHelper:
                 series.append(int(self.GetCellValue(row, 0)))
             return series
 
+        def Clear(self):
+            if self.NumberRows > 0:
+                self.DeleteRows(0, self.NumberRows)
+
         def OnCellRightClick(self, event):
             """
 
             :type event: wx.grid.GridEvent
             """
+            menu = wx.Menu()
+            for text in WxHelper.SeriesGrid.SERIES_COL.iterkeys():
+                select = text + ': Select All'
+                deselect = text + ': Deselect All'
+                WxHelper.AddNewMenuItem(self, menu, select, on_click=partial(self._category_selection,
+                                                                             command=select, row=event.GetRow()))
+                WxHelper.AddNewMenuItem(self, menu, deselect, on_click=partial(self._category_selection,
+                                                                               command=deselect, row=event.GetRow()))
+            self.PopupMenu(menu)
 
-            print 'cell right clicked'
-            if event.GetRow() not in self.SelectedRows:
-                self.SelectRow(event.GetRow(), addToSelected=True)
-            else:
-                self.DeselectRow(event.GetRow())
+        def _category_selection(self, event, command, row):
+            category, action = command.split(u': ')
+            check_column = WxHelper.SeriesGrid.SERIES_COL[category]
+            check_value = self.GetCellValue(row, check_column)
 
-        def Clear(self):
-            if self.NumberRows > 0:
-                self.DeleteRows(0, self.NumberRows)
+            if check_value is None or len(check_value) == 0:
+                print('Unable to parse information for row {} and column {}'.format(row, check_column))
+                return
+
+            for i in range(0, self.NumberRows):
+                cell_value = self.GetCellValue(i, check_column)
+                if cell_value == check_value:
+                    if action == 'Select All':
+                        self.SelectRow(i, addToSelected=True)
+                    elif action == 'Deselect All':
+                        self.DeselectRow(i)
 
     @staticmethod
     def GetFlags(flags=0, expand=True, top=True, bottom=True, left=True, right=True):

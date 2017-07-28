@@ -251,9 +251,14 @@ class VisualH2OWindow(wx.Frame):
                                          self.hydroshare_account_choice.GetCurrentSelection()).ShowModal()
 
     def SetOdmConnection(self, connection):
-        busy = wx.BusyInfo("Loading ODM series from database {}".format(connection.name))
         self.available_series_grid.Clear()
         self.selected_series_grid.Clear()
+
+        if connection is None:
+            self.h2o_series_dict.clear()
+            self.odm_series_dict.clear()
+
+        busy = wx.BusyInfo("Loading ODM series from database {}".format(connection.name))
 
         if connection.VerifyConnection():
             self.h2o_series_dict.clear()
@@ -279,9 +284,10 @@ class VisualH2OWindow(wx.Frame):
         if event.GetSelection() > 0:
             selection_string = self.database_connection_choice.GetStringSelection()
             self.SetOdmConnection(self.H2OService.DatabaseConnections[selection_string])
-            self.ResetSeriesInGrid()
         else:
             print "No selection made"
+            self.SetOdmConnection(None)
+        self.ResetSeriesInGrid()
 
     def on_hydroshare_account_chosen(self, event):
         self._resources = None
@@ -305,21 +311,6 @@ class VisualH2OWindow(wx.Frame):
         self.remove_selected_button.Enable()
         self.add_to_selected_button.Enable()
 
-    def _build_category_context_menu(self, selected_item, evt_parent):
-        series_category_menu = wx.Menu()
-        if self.odm_series_dict is None or len(self.odm_series_dict) == 0:
-            return
-
-        menu_strings = [u"Site: Select All", u"Site: Deselect All", u"Variable: Select All", u"Variable: Deselect All",
-                        u"QC Code: Select All", u"QC Code: Deselect All"]
-        grid = self.selected_series_grid if evt_parent == 'Selected Grid' else self.available_series_grid
-
-        for text in menu_strings:
-            WxHelper.AddNewMenuItem(self, series_category_menu, text, on_click=partial(self._category_selection,
-                                                                                       control=grid, direction=text,
-                                                                                       curr_index=selected_item))
-        return series_category_menu
-
     def _move_to_selected_series(self, event):
         for id in self.available_series_grid.GetSelectedSeries():
             self.selected_series_grid.AppendSeries(self.odm_series_dict[id])
@@ -329,35 +320,6 @@ class VisualH2OWindow(wx.Frame):
         for id in self.selected_series_grid.GetSelectedSeries():
             self.available_series_grid.AppendSeries(self.odm_series_dict[id])
         self.selected_series_grid.RemoveSelectedRows()
-
-    def OnAvailableCategoryRightClick(self, event):
-        item_int = WxHelper.GetMouseClickIndex(event, self.available_series_grid)
-        if item_int >= 0:
-            menu = self._build_category_context_menu(item_int, 'Available Listbox')
-            if menu is not None:
-                self.PopupMenu(menu)
-
-    def OnSelectedCategoryRightClick(self, event):
-        item_int = WxHelper.GetMouseClickIndex(event, self.selected_series_grid)
-        if item_int >= 0:
-            self.PopupMenu(self._build_category_context_menu(item_int, 'Selected Listbox'))
-
-    def _category_selection(self, event, direction, control, curr_index):
-        category, action = direction.split(u': ')
-        # TODO: Fix this to work with the grid object
-        # check_series = OdmSeriesHelper.PopulateH2OSeriesFromString(control.Items[curr_index])
-        #
-        # if check_series is None:
-        #     print('Unable to parse information for {}'.format(control.Items[curr_index]))
-        #     return
-        #
-        # for ctrl_index in range(0, len(control.Items)):
-        #     temp_series = OdmSeriesHelper.PopulateH2OSeriesFromString(control.Items[ctrl_index])
-        #     if OdmSeriesHelper.MATCH_ON_ATTRIBUTE[category](temp_series, check_series):
-        #         if action == 'Select All':
-        #             control.Select(ctrl_index)
-        #         elif action == 'Deselect All':
-        #             control.Deselect(ctrl_index)
 
     def _get_current_series_ids_from_resource(self, resource):
         if isinstance(resource, H2OManagedResource):
