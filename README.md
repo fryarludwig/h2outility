@@ -1,12 +1,7 @@
-iUtah-Utilities
+H2O Utilitiees
 ===============
 
-Dependencies:
-    Note - This list may not be comprehensive, and does not include 
-    dependencies of the individual packages below
-    Required non-default python packages are:
-        requests
-        lxml
-        pandas
-        sqlalchemy
-        pyodbc
+Silent Updater runs in "headless" mode
+Visual Updater displays a user interface
+
+The GUI must be used to intially select which HydroServer, HydroShare, and ODM Series should be used. 
