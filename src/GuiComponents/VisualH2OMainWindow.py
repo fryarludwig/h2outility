@@ -565,8 +565,8 @@ class VisualH2OWindow(wx.Frame):
         ###################################################
 
         # Buttons (and bitmaps) to add or remove series from the active dataset
-        left_arrow = WxHelper.GetBitmap('./GuiComponents/previous_icon.png', 20, 20)
-        right_arrow = WxHelper.GetBitmap('./GuiComponents/next_icon.png', 20, 20)
+        left_arrow = WxHelper.GetBitmap(APP_SETTINGS.PROJECT_DIR + '/GuiComponents/previous_icon.png', 20, 20)
+        right_arrow = WxHelper.GetBitmap(APP_SETTINGS.PROJECT_DIR + '/GuiComponents/next_icon.png', 20, 20)
 
         self.add_to_selected_button = wx.BitmapButton(self.panel, wx.ID_ANY, right_arrow, wx.DefaultPosition,
                                                       wx.DefaultSize)

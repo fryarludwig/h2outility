@@ -35,7 +35,6 @@ class WxHelper:
             'Method': 6
         }
 
-
         def __init__(self, app, parent, font=wx.SMALL_FONT, max_size=wx.DefaultSize, min_size=wx.DefaultSize):
             wx.grid.Grid.__init__(self, parent, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.SIMPLE_BORDER)
             self.SetMaxSize(max_size)
