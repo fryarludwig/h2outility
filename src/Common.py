@@ -22,8 +22,8 @@ class Common:
         General constants and non-class variables
         """
         self.IS_WINDOWS = 'nt' in os.name
-        self.SETTINGS_FILE_NAME = './operations_file.json'.format()
         self.PROJECT_DIR = str(os.path.dirname(os.path.realpath(__file__)))
+        self.SETTINGS_FILE_NAME = self.PROJECT_DIR + '/operations_file.json'
         self.DATASET_DIR = '{}/H2O_dataset_files/'.format(self.PROJECT_DIR)
         self.LOGFILE_DIR = '{}/logs/'.format(self.PROJECT_DIR)
         self.GUI_MODE = False
