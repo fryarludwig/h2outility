@@ -275,6 +275,10 @@ class WxHelper:
         list_pos = control.ScreenToClient(evt_pos)
         return control.HitTest(list_pos)
 
+    @staticmethod
+    def ModalConfirm(app, message, caption='Confirm Action'):
+        dialog = wx.MessageDialog(app, message, caption, wx.YES_NO | wx.ICON_QUESTION)
+        return dialog
 
 class PADDING:
     VERTICAL = WxHelper.GetFlags(left=False, right=False)
