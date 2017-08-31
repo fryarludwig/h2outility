@@ -49,30 +49,15 @@ class HydroShareResource:
     def get_metadata(self):
         metadata = {
             'title': str(self.title),
-            'description': str(self.abstract)
-            # ,
-            # 'funding_agencies': [{'agency_name': str(self.funding_agency),
-            #                       'award_title': str(self.award_title),
-            #                       'award_number': str(self.award_number),
-            #                       'agency_url': str(self.agency_url)}]
-            # ,
-            # "coverage": {"type": "period",
-            #              "value": {"start": self.period_start, "end": self.period_end}}}
+            'description': str(self.abstract),
+            'funding_agencies': [{'agency_name': str(self.funding_agency),
+                                  'award_title': str(self.award_title),
+                                  'award_number': str(self.award_number),
+                                  'agency_url': str(self.agency_url)}],
+            "coverage": [{"type": "period",
+                         "value": {"start": self.period_start, "end": self.period_end}}]
         }
-        # authors = {"creator": {"organization": 'iUTAH GAMUT Working Group'}}
-
-        # spatial_coverage = dict(coverage={'type': 'point',
-        #                                   'value': {
-        #                                       'east': '{}'.format(site.longitude),
-        #                                       'north': '{}'.format(site.latitude),
-        #                                       'units': 'Decimal degrees',
-        #                                       'name': '{}'.format(site.name),
-        #                                       'elevation': '{}'.format(site.elevation_m),
-        #                                       'projection': '{}'.format(site.spatial_ref.srs_name)
-        #                                   }})
-
-        # return metadata
-        return {}  # Return an empty array until the HydroShare metadata bug is fixed
+        return metadata
 
     def __str__(self):
         return '{} with {} files'.format(self.title, len(self.files))
@@ -333,6 +318,8 @@ class HydroShareUtility:
                 except Exception as e:
                     if APP_SETTINGS.H2O_DEBUG and APP_SETTINGS.VERBOSE:
                         print 'File did not exist in remote: {}, {}'.format(type(e), e)
+                if type(csv_file) != str:
+                    csv_file = str(csv_file)
                 self.client.addResourceFile(resource_id, csv_file)
                 print("File {} uploaded to remote {}".format(os.path.basename(csv_file), resource_id))
         except HydroShareException as e:
@@ -354,6 +341,14 @@ class HydroShareUtility:
                 print "Access rule edit failed - could not set to public due to exception: {}".format(e)
             except KeyError as e:
                 print 'Incorrectly formatted arguments given. Expected key not found: {}'.format(e)
+
+    def deleteFilesInResource(self, resource_id):
+        if self.auth is None:
+            raise HydroShareUtilityException("Cannot modify resources without authentication")
+        file_list = self.getResourceFileList(resource_id)
+        for file_info in file_list:
+            print os.path.basename(file_info['url'])
+            self.client.deleteResourceFile(resource_id, os.path.basename(file_info['url']))
 
     def removeResourceFiles(self, files_list, resource_id, quiet_fail=True):
         if self.auth is None:
@@ -480,7 +475,7 @@ class HydroShareUtility:
         # http://hs-restclient.readthedocs.io/en/latest/
         if resource is not None:
             resource_id = self.client.createResource(resource_type='CompositeResource', title=resource.title,
-                                                     abstract=resource.abstract)#, metadata=resource.get_metadata())
+                                                     abstract=resource.abstract)  # , metadata=resource.get_metadata())
             hs_resource = HydroShareResource({'resource_id': resource_id})
             self.getMetadataForResource(hs_resource)
             return hs_resource

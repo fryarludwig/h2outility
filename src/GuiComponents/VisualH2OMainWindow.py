@@ -89,8 +89,10 @@ class VisualH2OWindow(wx.Frame):
             (self.OnRemoveDatabaseAuth, 'db_auth_remove'),
             (self.OnPrintLog, 'logger'),
             (self.OnDatasetsGenerated, 'Datasets_Completed'),
-            (self.update_status_gauge, 'Dataset_Started'),
-            (self.update_status_gauge, 'Dataset_Generated')
+            (self.update_status_gauge_datasets, 'Dataset_Started'),
+            (self.update_status_gauge_datasets, 'Dataset_Generated'),
+            (self.update_status_gauge_uploads, 'Files_Uploaded'),
+            (self.update_status_gauge_uploads, 'Uploads_Completed')
         ]
 
         for sub_tuple in SUBSCRIPTIONS:
@@ -99,7 +101,13 @@ class VisualH2OWindow(wx.Frame):
     def OnPrintLog(self, message=""):
         if message is None or len(message) < 4 or message.isspace():
             return
-        self.log_message_listbox.Insert('{}: {}'.format(datetime.datetime.now().strftime('%H-%M-%S'), message), 0)
+        # self.log_message_listbox.Insert('{}: {}'.format(datetime.datetime.now().strftime('%H-%M-%S'), message), 0)
+        self.log_message_listbox.Append('{}: {}'.format(datetime.datetime.now().strftime('%H-%M-%S'), message))
+        selections = self.log_message_listbox.GetSelections()
+        for selection in selections:
+            self.log_message_listbox.Deselect(selection)
+        self.log_message_listbox.Select(len(self.log_message_listbox.Items) - 1)
+        self.log_message_listbox.Deselect(len(self.log_message_listbox.Items) - 1)
 
     def UpdateControls(self, progress=None):
         if progress is not None:
@@ -344,6 +352,21 @@ class VisualH2OWindow(wx.Frame):
         self._update_target_choices()
         self.hs_resource_choice.SetSelection(event.GetSelection())
 
+    def _delete_files_clicked(self, event):
+        resource = self._get_selected_resource()  # type: HydroShareResource
+        if resource is None:
+            self.OnPrintLog('Invalid resource selected, cannot delete resource files')
+            return
+
+        message = 'Do you want to delete all files currently in HydroShare resource "{}"? This action cannot ' \
+                  'be undone.'.format(resource.title)
+        confim_dialog = WxHelper.ModalConfirm(self, message, 'Delete HydroShare resource files')
+        if confim_dialog.ShowModal() == wx.ID_YES:
+            print 'Deleting files!'
+            self.H2OService.ActiveHydroshare.deleteFilesInResource(resource.id)
+        else:
+            print 'File delete canceled'
+
     def _save_managed_clicked(self, event):
         if not self._verify_dataset_selections():
             return
@@ -400,8 +423,7 @@ class VisualH2OWindow(wx.Frame):
         self.OnPrintLog('Running script')
         self.H2OService.SaveData()
         self.H2OService.LoadData()
-        self.H2OService.GenerateDatasetFiles()
-        self.H2OService.UploadGeneratedFiles()
+        self.H2OService.StartOperations()
 
     def OnStopScriptClicked(self, event):
         self.OnPrintLog('Stopping the script... This may take few moments')
@@ -468,9 +490,8 @@ class VisualH2OWindow(wx.Frame):
         self.OnPrintLog('Finished generating {} files for upload to HydroShare'.format(completed))
         self.status_gauge.SetValue(0)
 
-
-    def update_status_gauge(self, resource="None", completed=None, started=None):
-        message = ' generating files for resource {}'.format(resource)
+    def update_status_gauge_datasets(self, resource="None", completed=None, started=None):
+        message = ' file generation for resource "{}"'.format(resource)
         state = 'None'
         if completed is not None:
             state = 'Finished'
@@ -480,6 +501,20 @@ class VisualH2OWindow(wx.Frame):
             self.status_gauge.SetValue(started)
         else:
             message = 'File generation completed'
+            self.status_gauge.SetValue(0)
+        self.OnPrintLog(state + message)
+
+    def update_status_gauge_uploads(self, resource="None", completed=None, started=None):
+        message = ' file uploads to resource "{}"'.format(resource)
+        state = 'None'
+        if completed is not None:
+            state = 'Finished'
+            self.status_gauge.SetValue(completed)
+        elif started is not None:
+            state = 'Starting'
+            self.status_gauge.SetValue(started)
+        else:
+            message = 'File uploads to HydroShare completed'
             self.status_gauge.SetValue(0)
         self.OnPrintLog(state + message)
 
@@ -530,8 +565,9 @@ class VisualH2OWindow(wx.Frame):
         self.save_dataset_button = WxHelper.GetButton(self, self.panel, u" Apply Changes ", self._save_managed_clicked,
                                                       size_x=100, size_y=30)
         self.clear_dataset_button = WxHelper.GetButton(self, self.panel, u" Clear Changes ",
-                                                       self._remove_from_managed_clicked,
-                                                       size_x=100, size_y=30)
+                                                       self._remove_from_managed_clicked, size_x=100, size_y=30)
+        self.remove_files_button = WxHelper.GetButton(self, self.panel, u"Delete Resource Files",
+                                                      self._delete_files_clicked, size_x=150, size_y=30)
 
         col_base = 4
         row_base = 5
@@ -556,9 +592,10 @@ class VisualH2OWindow(wx.Frame):
         resource_sizer.Add(self.resource_award_title_input, pos=(row_base + 2, col_base + 1), span=(1, 3), flag=flags)
         resource_sizer.Add(self.resource_award_number_input, pos=(row_base + 3, col_base + 1), span=(1, 3), flag=flags)
 
-        resource_sizer.Add(self.GetLabel(u'Resource Management:'), pos=(row_base + 4, 4), span=(1, 2), flag=text_flags)
+        resource_sizer.Add(self.GetLabel(u'Resource Management:'), pos=(row_base + 4, 4), span=(1, 1), flag=text_flags)
         resource_sizer.Add(self.save_dataset_button, pos=(row_base + 4, 7), span=(1, 1), flag=wx.ALIGN_CENTER)
         resource_sizer.Add(self.clear_dataset_button, pos=(row_base + 4, 6), span=(1, 1), flag=wx.ALIGN_CENTER)
+        resource_sizer.Add(self.remove_files_button, pos=(row_base + 4, 5), span=(1, 1), flag=wx.ALIGN_CENTER)
 
         ###################################################
         #         ODM Series selection sizer              #

@@ -19,8 +19,5 @@ if __name__ == "__main__":
     print 'Starting Silent updater'
     service = H2OService()
     service.LoadData()
-    print 'Starting CSV file generation'
-    service.GenerateDatasetFiles(blocking=True)
-    print 'Starting CSV file upload'
-    service.UploadGeneratedFiles(blocking=True)
+    service.StartOperations(blocking=True)
     print 'Processing completed'
