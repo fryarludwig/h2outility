@@ -6,11 +6,8 @@ import sys
 import json
 
 import jsonpickle
-from pubsub import pub
-import time
-import wx
-import pandas
 
+from pubsub import pub
 from threading import Thread
 from exceptions import IOError
 
@@ -79,7 +76,8 @@ class H2OService:
                 self._thread_checkpoint()
 
                 chunks = OdmSeriesHelper.DetermineForcedSeriesChunking(resource)
-                print '\n -- {} contains {} chunks'.format(resource.resource.title, len(chunks))
+                print '\n -- {} has {} chunks {}'.format(resource.resource.title, len(chunks),
+                                                         'per year' if resource.chunk_years else '')
                 for chunk in chunks:
                     self._thread_checkpoint()
                     odm_series = [OdmSeriesHelper.GetOdmSeriesFromH2OSeries(series_service, h2o) for h2o in chunk]
@@ -92,6 +90,7 @@ class H2OService:
                 print 'Exception encountered while running thread: {}'.format(e)
         except Exception as e:
             print 'Exception encountered while generating datasets:\n{}'.format(e)
+            exit()
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 
     def _upload_files(self):
@@ -206,7 +205,7 @@ class H2OService:
                 self.ResourceTemplates = data['resource_templates'] if 'resource_templates' in data else {}
                 self.ManagedResources = data['managed_resources'] if 'managed_resources' in data else {}
             json_in.close()
-            print('Dataset information loaded from {}'.format(input_file))
+            print 'Dataset information loaded from {}'.format(input_file)
             return True
         except IOError as e:
             print 'Error reading input file data from {}:\n\t{}'.format(input_file, e)
@@ -238,7 +237,15 @@ class H2OLogger:
             sys.stderr = self
 
     def write(self, message):
-        self.terminal.write(message)
-        self.LogFile.write(message)
-        if APP_SETTINGS.H2O_DEBUG and APP_SETTINGS.VERBOSE and not (message is None or len(message) <= 0):
-            pub.sendMessage('logger', message='H2OService: ' + str(message))
+        if len(message) > 0 and not message.isspace():
+            self.terminal.write(self.prefix_date(message))
+            self.LogFile.write(self.prefix_date(message))
+            if APP_SETTINGS.GUI_MODE and APP_SETTINGS.VERBOSE:
+                pub.sendMessage('logger', message='H2OService: ' + str(message))
+
+    def prefix_date(self, message):
+        date_string = datetime.datetime.now().strftime('%H-%M-%S')
+        return '{date}: {message}\n'.format(date=date_string, message=message)
+
+    def flush(self):
+        pass

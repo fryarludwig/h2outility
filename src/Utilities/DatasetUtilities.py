@@ -200,25 +200,35 @@ def BuildCsvFiles(series_service, series_list, chunk_years=False):
         for year in years:
             name_with_year = base_name.format(year)
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
+            if dataframe is None:
+                print 'No data values exist for site {} and year {}'.format(site.code, year)
+                continue
             headers = BuildSeriesFileHeader(series_list, site, source)
             if WriteSeriesToFile(name_with_year, dataframe, headers):
                 file_list.append(name_with_year)
     else:
         print 'Dataframe for {}'.format(variables)
         dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables)
-        headers = BuildSeriesFileHeader(series_list, site, source)
-        if WriteSeriesToFile(base_name, dataframe, headers):
-            file_list.append(base_name)
+        if dataframe is not None:
+            headers = BuildSeriesFileHeader(series_list, site, source)
+            if WriteSeriesToFile(base_name, dataframe, headers):
+                file_list.append(base_name)
+        else:
+            print 'No data values exist for this dataset'
     return file_list
 
 
 def WriteSeriesToFile(csv_name, dataframe, headers):
+    if dataframe is None:
+        print('No dataframe is available to write to file {}'.format(csv_name))
+        return False
     file_out = createFile(csv_name)
     if file_out is None:
         print('Unable to create output file {}'.format(csv_name))
         return False
     else:
         # Write data to CSV file
+        print('Writing datasets to file: {}'.format(csv_name))
         file_out.write(headers)
         dataframe.to_csv(file_out)
         file_out.close()
@@ -316,7 +326,11 @@ class SourceInfo:
         return outputStr
 
     def sourceOutHelper(self, title, value):
-        return "# " + title + ": " + value + "\n"
+        if isinstance(title, unicode):
+            title = title.encode('utf-8').strip()
+        if isinstance(value, unicode):
+            value = value.encode('utf-8').strip()
+        return '# {}: {} \n'.format(title, value)
 
 
 class ExpandedVariableData:
@@ -363,8 +377,11 @@ class ExpandedVariableData:
         return formatted
 
     def formatHelper(self, title, var):
-        formatted = "# " + title + ": " + str(var) + "\n"
-        return formatted
+        if isinstance(title, unicode):
+            title = title.encode('utf-8').strip()
+        if isinstance(var, unicode):
+            var = var.encode('utf-8').strip()
+        return '# {}: {} \n'.format(title, var)
 
 
 class CompactVariableData:
@@ -407,5 +424,8 @@ class CompactVariableData:
         return formatted
 
     def formatHelper(self, title, var):
-        formatted = title + ": " + str(var) + " | "
-        return formatted
+        if isinstance(title, unicode):
+            title = title.encode('utf-8').strip()
+        if isinstance(var, unicode):
+            var = var.encode('utf-8').strip()
+        return '{}: {} | '.format(title, var)

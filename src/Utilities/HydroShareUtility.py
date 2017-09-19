@@ -57,6 +57,8 @@ class HydroShareResource:
             "coverage": [{"type": "period",
                          "value": {"start": self.period_start, "end": self.period_end}}]
         }
+
+        print metadata
         return metadata
 
     def __str__(self):
