@@ -45,11 +45,11 @@ class VisualH2OWindow(wx.Frame):
         # Declare/populate variables, wx objects  #
         ###########################################
         APP_SETTINGS.GUI_MODE = True
-        self.MAIN_WINDOW_SIZE = (940, 860)
+        self.ORIGINAL_SIZE = (940, 860)
         self.MONOSPACE = wx.Font(9, 75, 90, 90, False, "Inconsolata")
-        self._setup_subscriptions()
-        supported_notifications = ['logger', 'Dataset_Started', 'Dataset_Generated']
-        self.H2OService = H2OService(subscriptions=supported_notifications)
+        self._setup_internal_subscriptions()
+        h2o_subs = self._setup_h2o_subscriptions()
+        self.H2OService = H2OService(subscriptions=h2o_subs)
 
         self.odm_series_dict = {}  # type: dict[str, Series]
         self.h2o_series_dict = {}  # type: dict[str, H2OSeries]
@@ -63,20 +63,19 @@ class VisualH2OWindow(wx.Frame):
         self.mapping_grid = None  # type: WxHelper.SeriesGrid
 
         # just technicalities, honestly
-        wx.Frame.__init__(self, parent, id, title, style=wx.MAXIMIZE_BOX | wx.RESIZE_BORDER | wx.CAPTION | wx.CLOSE_BOX,
-                          size=self.MAIN_WINDOW_SIZE)
-        self.parent = parent
+        super(wx.Frame, self).__init__(parent, id, title, style=wx.DEFAULT_FRAME_STYLE, size=self.ORIGINAL_SIZE)
+        self.panel = wx.Panel(self, wx.ID_ANY)
         self.Centre()
-        self._build_main_window()
-
-        self.panel.Fit()
+        main_sizer = self._build_main_window()
+        self.panel.SetSizerAndFit(main_sizer)
         self.Fit()
+
         self.Show(True)
 
         self.H2OService.LoadData()
         self.UpdateControls()
 
-    def _setup_subscriptions(self):
+    def _setup_internal_subscriptions(self):
         SUBSCRIPTIONS = [
             (self.OnDeleteResourceTemplate, 'hs_resource_remove'),
             (self.OnSaveResourceTemplate, 'hs_resource_save'),
@@ -86,22 +85,29 @@ class VisualH2OWindow(wx.Frame):
             (self.OnRemoveHydroShareAuth, 'hs_auth_remove'),
             (self.OnSaveDatabaseAuth, 'db_auth_save'),
             (self.OnTestDatabaseAuth, 'db_auth_test'),
-            (self.OnRemoveDatabaseAuth, 'db_auth_remove'),
+            (self.OnRemoveDatabaseAuth, 'db_auth_remove')
+        ]
+        for sub_tuple in SUBSCRIPTIONS:
+            pub.subscribe(sub_tuple[0], sub_tuple[1])
+
+    def _setup_h2o_subscriptions(self):
+        H2O_SUBSCRIPTIONS = [
             (self.OnPrintLog, 'logger'),
             (self.OnDatasetsGenerated, 'Datasets_Completed'),
+            (self.OnFileGenerationFailed, 'File_Failed'),
             (self.update_status_gauge_datasets, 'Dataset_Started'),
             (self.update_status_gauge_datasets, 'Dataset_Generated'),
             (self.update_status_gauge_uploads, 'Files_Uploaded'),
             (self.update_status_gauge_uploads, 'Uploads_Completed')
         ]
 
-        for sub_tuple in SUBSCRIPTIONS:
+        for sub_tuple in H2O_SUBSCRIPTIONS:
             pub.subscribe(sub_tuple[0], sub_tuple[1])
+        return [sub_tuple[1] for sub_tuple in H2O_SUBSCRIPTIONS]
 
     def OnPrintLog(self, message=""):
         if message is None or len(message) < 4 or message.isspace():
             return
-        # self.log_message_listbox.Insert('{}: {}'.format(datetime.datetime.now().strftime('%H-%M-%S'), message), 0)
         self.log_message_listbox.Append('{}: {}'.format(datetime.datetime.now().strftime('%H-%M-%S'), message))
         selections = self.log_message_listbox.GetSelections()
         for selection in selections:
@@ -141,6 +147,8 @@ class VisualH2OWindow(wx.Frame):
             self.hs_resource_choice.Append(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
             self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
             self.FillResourceFields(resource)
+        else:
+            self.FillResourceFields(None)
 
     def OnRemoveDatabaseAuth(self, result=None):
         if result is None:
@@ -201,11 +209,11 @@ class VisualH2OWindow(wx.Frame):
         resource = None
         re_match = OdmSeriesHelper.RE_RESOURCE_PARSER.match(self.hs_resource_choice.GetStringSelection())
         if re_match is not None and 'title' in re_match.groupdict() and 'id' in re_match.groupdict():
-            id = re_match.groupdict()['id']
-            if id in self.H2OService.ManagedResources:
-                resource = self.H2OService.ManagedResources[id].resource
+            resource_id = re_match.groupdict()['id']
+            if resource_id in self.H2OService.ManagedResources:
+                resource = self.H2OService.ManagedResources[resource_id].resource
             else:
-                resource = self._resources[id] if id in self._resources else None
+                resource = self._resources[resource_id] if resource_id in self._resources else None
         return resource
 
     def _get_dataset_choices(self):
@@ -224,10 +232,12 @@ class VisualH2OWindow(wx.Frame):
         if self._resources is None:
             choices = [CHOICE_DEFAULTS.CONNECT_TO_HYDROSHARE]
         else:
-            managed_resources = [CHOICE_DEFAULTS.RESOURCE_STR.format(resource.resource.title, id) for id, resource in
-                        self.H2OService.ManagedResources.iteritems() if resource.resource is not None]
-            unmanaged_resources = [CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, id) for id, resource in
-                        self._resources.iteritems() if id not in self.H2OService.ManagedResources]
+            managed_resources = [CHOICE_DEFAULTS.RESOURCE_STR.format(resource.resource.title, hs_id) for hs_id, resource
+                                 in self.H2OService.ManagedResources.iteritems() if resource.resource is not None]
+            unmanaged_resources = [CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, hs_id) for hs_id, resource in
+                                   self._resources.iteritems() if hs_id not in self.H2OService.ManagedResources]
+            managed_resources.sort(reverse=self.invert_resource_choices_checkbox.IsChecked())
+            unmanaged_resources.sort(reverse=self.invert_resource_choices_checkbox.IsChecked())
             choices = [CHOICE_DEFAULTS.CREATE_NEW_RESOURCE,
                        CHOICE_DEFAULTS.MANAGED_RESOURCES.format(len(managed_resources))]
             choices += managed_resources + [CHOICE_DEFAULTS.UNMANAGED_RESOURCES.format(len(unmanaged_resources))]
@@ -320,13 +330,13 @@ class VisualH2OWindow(wx.Frame):
         self.add_to_selected_button.Enable()
 
     def _move_to_selected_series(self, event):
-        for id in self.available_series_grid.GetSelectedSeries():
-            self.selected_series_grid.AppendSeries(self.odm_series_dict[id])
+        series_list = [self.odm_series_dict[series_id] for series_id in self.available_series_grid.GetSelectedSeries()]
+        self.selected_series_grid.InsertSeriesList(series_list, do_sort=True)
         self.available_series_grid.RemoveSelectedRows()
 
     def _move_from_selected_series(self, event):
-        for id in self.selected_series_grid.GetSelectedSeries():
-            self.available_series_grid.AppendSeries(self.odm_series_dict[id])
+        series_list = [self.odm_series_dict[series_id] for series_id in self.selected_series_grid.GetSelectedSeries()]
+        self.available_series_grid.InsertSeriesList(series_list, do_sort=True)
         self.selected_series_grid.RemoveSelectedRows()
 
     def _get_current_series_ids_from_resource(self, resource):
@@ -416,8 +426,8 @@ class VisualH2OWindow(wx.Frame):
         return False
 
     def OnEditResourceTemplates(self, event, create_resource=False):
-        result = HydroShareResourceTemplateDialog(self, self.H2OService.ResourceTemplates,
-                                                  create_selected=create_resource).ShowModal()
+        return HydroShareResourceTemplateDialog(self, self.H2OService.ResourceTemplates,
+                                                create_selected=create_resource).ShowModal()
 
     def OnRunScriptClicked(self, event):
         self.OnPrintLog('Running script')
@@ -432,12 +442,16 @@ class VisualH2OWindow(wx.Frame):
 
     def _destination_resource_changed(self, event):
         if self.hs_resource_choice.GetStringSelection() == CHOICE_DEFAULTS.CREATE_NEW_RESOURCE:
-            self.OnEditResourceTemplates(None, create_resource=True)
+            result = self.OnEditResourceTemplates(None, create_resource=True)
+            if result == 0:
+                self.FillResourceFields(None)
+                self.ResetSeriesInGrid()
         elif len(self._resources) > 2:
             resource = self._get_selected_resource()        # type: H2OManagedResource
 
             if resource is None:
                 print 'No resource was selected'
+                self.ResetSeriesInGrid()
                 return
             elif isinstance(resource, HydroShareResource):
                 if resource.id in self.H2OService.ManagedResources:
@@ -446,6 +460,7 @@ class VisualH2OWindow(wx.Frame):
                     temp = resource
                     self.H2OService.ActiveHydroshare.getMetadataForResource(temp)
                     self.FillResourceFields(temp)
+                    self.ResetSeriesInGrid()
                     return
 
             self.FillResourceFields(resource.resource)
@@ -486,9 +501,16 @@ class VisualH2OWindow(wx.Frame):
             self.resource_award_title_input.Value = resource.award_title
             self.resource_funding_agency_input.Value = resource.funding_agency
 
+    def _sort_resource_choices(self, event):
+        WxHelper.UpdateChoiceControl(self.hs_resource_choice, self._get_destination_resource_choices())
+
     def OnDatasetsGenerated(self, completed):
         self.OnPrintLog('Finished generating {} files for upload to HydroShare'.format(completed))
         self.status_gauge.SetValue(0)
+
+    def OnFileGenerationFailed(self, filename, message):
+        print 'Files failed to generate'
+        self.OnPrintLog('File "{}" could not be created: {}'.format(filename, message))
 
     def update_status_gauge_datasets(self, resource="None", completed=None, started=None):
         message = ' file generation for resource "{}"'.format(resource)
@@ -525,7 +547,6 @@ class VisualH2OWindow(wx.Frame):
         ######################################
         #   Setup sizers and panels          #
         ######################################
-        self.panel = wx.Panel(self, wx.ID_ANY)
         main_sizer = wx.BoxSizer(wx.VERTICAL)
         hs_account_sizer = WxHelper.GetGridBagSizer()
         selection_label_sizer = WxHelper.GetGridBagSizer()
@@ -554,6 +575,7 @@ class VisualH2OWindow(wx.Frame):
                                                      on_change=self._destination_resource_changed,
                                                      font=self.MONOSPACE)
 
+        self.invert_resource_choices_checkbox = WxHelper.GetCheckBox(self, self.panel, u'Invert Resource Sorting', on_change=self._sort_resource_choices)
         self.resource_title_input = WxHelper.GetTextInput(self.panel)
         self.resource_abstract_input = WxHelper.GetTextInput(self.panel, wrap_text=True)
         self.resource_funding_agency_input = WxHelper.GetTextInput(self.panel)
@@ -575,12 +597,13 @@ class VisualH2OWindow(wx.Frame):
         text_flags = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
 
         resource_sizer.Add(self.GetLabel(u'Select a resource'), pos=(0, 0), span=(1, 1), flag=ALIGN.CENTER)
+        resource_sizer.Add(self.invert_resource_choices_checkbox, pos=(0, 6), span=(1, 2), flag=text_flags)
         resource_sizer.Add(self.hs_resource_choice, pos=(1, 0), span=(1, 8), flag=ALIGN.CENTER)
 
         resource_sizer.Add(self.GetLabel(u'Resource Title'), pos=(2, 0), span=(1, 1))
         resource_sizer.Add(self.GetLabel(u'Resource Abstract'), pos=(4, 0), span=(1, 1))
         resource_sizer.Add(self.resource_title_input, pos=(3, 0), span=(1, 8), flag=ALIGN.LEFT)
-        resource_sizer.Add(self.resource_abstract_input, pos=(row_base, 0), span=(4, 4), flag=ALIGN.CENTER)
+        resource_sizer.Add(self.resource_abstract_input, pos=(row_base, 0), span=(4, 4), flag=ALIGN.CENTER | PADDING.ALL)
 
         resource_sizer.Add(self.GetLabel(u'Funding Agency'), pos=(row_base, col_base), span=(1, 1), flag=text_flags)
         resource_sizer.Add(self.GetLabel(u'Agency Website'), pos=(row_base + 1, col_base), span=(1, 1), flag=text_flags)
@@ -642,13 +665,13 @@ class VisualH2OWindow(wx.Frame):
         odm_series_sizer.Add(self.GetLabel(u'Selected Series', font=bold_font), pos=(row + 2, 5), span=(1, 4),
                              flag=wx.ALIGN_CENTER)
 
-        x = 500
-        y = 450
-        self.selected_series_grid = WxHelper.SeriesGrid(self, self.panel, max_size=wx.Size(x, y))
-        self.available_series_grid = WxHelper.SeriesGrid(self, self.panel, max_size=wx.Size(x, y))
+        grid_x_size = 500
+        grid_y_size = 175
+        self.selected_series_grid = WxHelper.SeriesGrid(self, self.panel, size=wx.Size(grid_x_size, grid_y_size))
+        self.available_series_grid = WxHelper.SeriesGrid(self, self.panel, size=wx.Size(grid_x_size, grid_y_size))
 
-        odm_series_sizer.Add(self.available_series_grid, pos=(row + 3, 0), span=(6, 4), flag=ALIGN.CENTER)
-        odm_series_sizer.Add(self.selected_series_grid, pos=(row + 3, 5), span=(6, 4), flag=ALIGN.CENTER)
+        odm_series_sizer.Add(self.available_series_grid, pos=(row + 3, 0), span=(6, 4), flag=PADDING.ALL)
+        odm_series_sizer.Add(self.selected_series_grid, pos=(row + 3, 5), span=(6, 4), flag=PADDING.ALL)
 
         odm_series_sizer.Add(self.add_to_selected_button, pos=(row + 4, 4), span=(1, 1), flag=wx.ALIGN_CENTER)
         odm_series_sizer.Add(self.remove_selected_button, pos=(row + 6, 4), span=(1, 1), flag=wx.ALIGN_CENTER)
@@ -679,7 +702,7 @@ class VisualH2OWindow(wx.Frame):
         self.AddLineToMainSizer(main_sizer, flags=PADDING.ALL)
         self.AddGridBagToMainSizer(main_sizer, selection_label_sizer, flags=PADDING.HORIZONTAL)
         self.AddGridBagToMainSizer(main_sizer, resource_sizer, flags=PADDING.HORIZONTAL)
-        self.AddGridBagToMainSizer(main_sizer, odm_series_sizer, flags=PADDING.HORIZONTAL)
+        self.AddGridBagToMainSizer(main_sizer, odm_series_sizer, flags=ALIGN.CENTER | PADDING.ALL | wx.EXPAND)
         self.AddLineToMainSizer(main_sizer, flags=PADDING.ALL)
         self.AddGridBagToMainSizer(main_sizer, action_status_sizer, flags=WxHelper.GetFlags(top=False))
 
@@ -699,10 +722,7 @@ class VisualH2OWindow(wx.Frame):
         menuBar = wx.MenuBar()
         menuBar.Append(file_menu, "&File")  # Adding the "filemenu" to the MenuBar
         self.SetMenuBar(menuBar)  # Adding the MenuBar to the Frame content.
-
-        self.panel.SetSizerAndFit(main_sizer)
-        self.SetAutoLayout(True)
-        main_sizer.Fit(self.panel)
+        return main_sizer
 
     def AddLineToMainSizer(self, parent, border=10, flags=wx.ALL | wx.EXPAND):
         parent.Add(wx.StaticLine(self.panel), 0, flag=flags, border=border)

@@ -14,11 +14,8 @@ from GAMUTRawData.odmdata import Sample
 from GAMUTRawData.odmdata import Method
 from GAMUTRawData.odmdata import QualityControlLevel
 from GAMUTRawData.odmdata import ODMVersion
-from GAMUTRawData.logger import LoggerTool
 import pandas
 
-# tool = LoggerTool()
-# logger = tool.setupLogger(__name__, __name__ + '.log', 'w', logging.DEBUG)
 logger = logging.getLogger('main')
 
 

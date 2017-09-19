@@ -6,10 +6,16 @@ A GUI-based and optionally headless tool to select times series values from a Hy
 
 These tools are written for Python 2.7.X
 
-To install the required packages, run the following command from the project's root directory:
+To download, install, and run this project, execute the following commands:
+
+> Note: To use a virtual environment with this project, create and activate your virtual environment before running these commands.
 
 ```sh
-pip install -r ./src/requirements.txt
+git clone https://github.com/UCHIC/h2outility.git
+cd h2outility
+python -m pip install -r ./src/requirements.txt
+python ./src/VisualUpdater.py
+python ./src/SilentUpdater.py
 ```
 
 ***

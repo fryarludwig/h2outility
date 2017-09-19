@@ -161,7 +161,7 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
     return csv_table
 
 
-def BuildCsvFiles(series_service, series_list, chunk_years=False):
+def BuildCsvFiles(series_service, series_list, chunk_years, failed_files=[]):
     # type: (SeriesService, list[Series], bool) -> list[str]
     file_list = []
     base_name = '{}ODM_Series_'.format(APP_SETTINGS.DATASET_DIR)
@@ -192,6 +192,7 @@ def BuildCsvFiles(series_service, series_list, chunk_years=False):
         base_name += '.csv'
     if len(variables) == 0 or len(methods) == 0:
         print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
+
         return file_list
 
     print 'Starting to generate files'
@@ -202,10 +203,14 @@ def BuildCsvFiles(series_service, series_list, chunk_years=False):
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
             if dataframe is None:
                 print 'No data values exist for site {} and year {}'.format(site.code, year)
+                failed_files.append((name_with_year, 'No data values found for file'))
                 continue
             headers = BuildSeriesFileHeader(series_list, site, source)
             if WriteSeriesToFile(name_with_year, dataframe, headers):
                 file_list.append(name_with_year)
+            else:
+                print 'Unable to write series to file {}'.format(name_with_year)
+                failed_files.append((name_with_year, 'Unable to write series to file'))
     else:
         print 'Dataframe for {}'.format(variables)
         dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables)
@@ -213,8 +218,12 @@ def BuildCsvFiles(series_service, series_list, chunk_years=False):
             headers = BuildSeriesFileHeader(series_list, site, source)
             if WriteSeriesToFile(base_name, dataframe, headers):
                 file_list.append(base_name)
+            else:
+                print 'Unable to write series to file {}'.format(base_name)
+                failed_files.append((base_name, 'Unable to write series to file'))
         else:
             print 'No data values exist for this dataset'
+            failed_files.append((base_name, 'No data values found for file'))
     return file_list
 
 

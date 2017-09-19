@@ -26,6 +26,7 @@ class H2OService:
     GUI_PUBLICATIONS = {
         'logger': lambda message: {'message': message},
         'Datasets_Completed': lambda completed, total: {'completed': completed, 'total': total},
+        'File_Failed': lambda filename, message: {'filename': filename, 'message': message},
         'Dataset_Started': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
         'Dataset_Generated': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource},
         'Files_Uploaded': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
@@ -61,7 +62,6 @@ class H2OService:
         try:
             for resource in self.ManagedResources.itervalues():
                 self._thread_checkpoint()
-
                 if resource.resource is None:
                     print 'Error encountered: resource details for resource {} are missing'.format(resource.resource_id)
                     continue
@@ -81,7 +81,11 @@ class H2OService:
                 for chunk in chunks:
                     self._thread_checkpoint()
                     odm_series = [OdmSeriesHelper.GetOdmSeriesFromH2OSeries(series_service, h2o) for h2o in chunk]
-                    resource.associated_files += BuildCsvFiles(series_service, odm_series, resource.chunk_years)
+                    failed_files = []
+                    resource.associated_files += BuildCsvFiles(series_service, odm_series, resource.chunk_years,
+                                                               failed_files)
+                    for filename, message in failed_files:
+                        self.NotifyVisualH2O('File_Failed', filename, message)
                 self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
             print 'Dataset generation completed without error'
         except TypeError as e:
@@ -90,7 +94,6 @@ class H2OService:
                 print 'Exception encountered while running thread: {}'.format(e)
         except Exception as e:
             print 'Exception encountered while generating datasets:\n{}'.format(e)
-            exit()
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 
     def _upload_files(self):
@@ -109,9 +112,16 @@ class H2OService:
                     current_account_name = resource.hs_account_name
 
                 response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
+                if APP_SETTINGS.VERBOSE:
+                    print response
                 self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
                 resource_names.append(resource.resource.title)
                 self.NotifyVisualH2O('Files_Uploaded', resource.resource.title, current_dataset, dataset_count)
+            except TypeError as e:
+                print 'File uploading stopped without finishing'
+                if APP_SETTINGS.H2O_DEBUG:
+                    print 'Exception encountered while running thread: {}'.format(e)
+                break
             except Exception as e:
                 print e
         self.NotifyVisualH2O('Uploads_Completed', resource_names, current_dataset, dataset_count)
@@ -167,10 +177,14 @@ class H2OService:
     def NotifyVisualH2O(self, pub_key, *args):
         try:
             if not APP_SETTINGS.GUI_MODE and pub_key in H2OService.GUI_PUBLICATIONS.keys():
-                print H2OService.GUI_PUBLICATIONS[pub_key](*args)
+                print 'No subscriber for message: {}'.format(H2OService.GUI_PUBLICATIONS[pub_key](*args))
             elif pub_key in self.Subscriptions and pub_key in H2OService.GUI_PUBLICATIONS.keys():
                 result = H2OService.GUI_PUBLICATIONS[pub_key](*args)
                 pub.sendMessage(pub_key, **result)
+            else:
+                print 'Nowhere to go for message: {}'.format(H2OService.GUI_PUBLICATIONS[pub_key](*args))
+                print 'GUI Mode: {}'.format(APP_SETTINGS.GUI_MODE)
+                print 'Pub Key: {}; Exists: {}'.format(pub_key, pub_key in H2OService.GUI_PUBLICATIONS.keys())
         except Exception as e:
             print 'Exception: {}\nUnknown key {} or invalid args {}'.format(e, pub_key, args)
 

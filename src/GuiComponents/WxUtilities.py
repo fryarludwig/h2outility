@@ -35,10 +35,13 @@ class WxHelper:
             'Method': 6
         }
 
-        def __init__(self, app, parent, font=wx.SMALL_FONT, max_size=wx.DefaultSize, min_size=wx.DefaultSize):
+        def __init__(self, app, parent, font=wx.SMALL_FONT, size=None, max_size=wx.DefaultSize, min_size=wx.DefaultSize):
             wx.grid.Grid.__init__(self, parent, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.SIMPLE_BORDER)
-            self.SetMaxSize(max_size)
-            self.SetMinSize(min_size)
+            if size is not None:
+                self.CacheBestSize(size)
+                self.SetSizeHints(size)
+                # self.SetMaxSize(max_size)
+                # self.SetMinSize(min_size)
 
             self.CreateGrid(0, len(WxHelper.SeriesGrid.LABELS))
             self.EnableEditing(False)
@@ -52,6 +55,9 @@ class WxHelper:
             self.SetSelectionMode(GRID_SELECTION_MODES.ROWS)
 
             self.DisableCellEditControl()
+
+            self.LastRowSorted = 0
+            self.LastSortInverted = False
 
             for i in range(0, len(WxHelper.SeriesGrid.LABELS)):
                 self.SetColLabelValue(i, WxHelper.SeriesGrid.LABELS[i][0])
@@ -69,6 +75,38 @@ class WxHelper:
             # self.SetDefaultCellAlignment(wx.ALIGN_CENTRE, wx.ALIGN_TOP)
 
             app.Bind(wx.PyEventBinder(wx.grid.wxEVT_GRID_CELL_RIGHT_CLICK, 1), self.OnCellRightClick, self)
+            app.Bind(wx.PyEventBinder(wx.grid.wxEVT_GRID_COL_SORT, 1), self.OnSortClicked, self)
+
+        def OnSortClicked(self, event):
+            """
+
+            :type event: wx.grid.GridEvent
+            """
+            sort_inverted = not self.LastSortInverted if self.LastRowSorted == event.Col else False
+            self.SortRowsByColumn(event.Col, sort_inverted)
+
+        def ApplyLastSort(self):
+            self.SortRowsByColumn(self.LastRowSorted, self.LastSortInverted)
+
+        def SortRowsByColumn(self, column_number, sort_inverted):
+            sorted_list = []
+            for i in range(0, self.NumberRows):
+                sort_value = self.GetCellValue(i, column_number)
+                if unicode.isdigit(sort_value):
+                    sort_value = int(sort_value)
+                sorted_list.append((sort_value, self.GetValuesForRow(i)))
+
+            sorted_list.sort(key=lambda x: x[0], reverse=sort_inverted)
+
+            self.Clear()
+            for row_values in [item[1] for item in sorted_list]:
+                self.AddGridRow(list(row_values))
+
+            self.LastRowSorted = column_number
+            self.LastSortInverted = sort_inverted
+
+        def GetValuesForRow(self, row_number):
+            return [self.GetCellValue(row_number, column_number) for column_number in range(0, self.NumberCols)]
 
         def AddGridRow(self, values):
             """
@@ -86,6 +124,17 @@ class WxHelper:
                       series.quality_control_level_code, series.source_description,
                       series.method_description]
             self.AddGridRow(values)
+
+        def InsertSeriesList(self, series_list, do_sort=True):
+            for series in series_list:
+                self.AppendSeries(series)
+            if do_sort:
+                self.ApplyLastSort()
+
+        def InsertSeries(self, series, do_sort=True):
+            self.AppendSeries(series)
+            if do_sort:
+                self.ApplyLastSort()
 
         def RemoveSelectedRows(self):
             for i in range(0, self.NumberRows):
@@ -111,6 +160,10 @@ class WxHelper:
             :type event: wx.grid.GridEvent
             """
             menu = wx.Menu()
+            WxHelper.AddNewMenuItem(self, menu, 'Select All', on_click=partial(self._category_selection,
+                                                                         command='All', row=event.GetRow()))
+            WxHelper.AddNewMenuItem(self, menu, 'Deselect All', on_click=partial(self._category_selection,
+                                                                           command='None', row=event.GetRow()))
             for text in WxHelper.SeriesGrid.SERIES_COL.iterkeys():
                 select = text + ': Select All'
                 deselect = text + ': Deselect All'
@@ -121,21 +174,26 @@ class WxHelper:
             self.PopupMenu(menu)
 
         def _category_selection(self, event, command, row):
-            category, action = command.split(u': ')
-            check_column = WxHelper.SeriesGrid.SERIES_COL[category]
-            check_value = self.GetCellValue(row, check_column)
+            if command == 'All':
+                self.SelectAll()
+            elif command == 'None':
+                self.ClearSelection()
+            else:
+                category, action = command.split(u': ')
+                check_column = WxHelper.SeriesGrid.SERIES_COL[category]
+                check_value = self.GetCellValue(row, check_column)
 
-            if check_value is None or len(check_value) == 0:
-                print('Unable to parse information for row {} and column {}'.format(row, check_column))
-                return
+                if check_value is None or len(check_value) == 0:
+                    print('Unable to parse information for row {} and column {}'.format(row, check_column))
+                    return
 
-            for i in range(0, self.NumberRows):
-                cell_value = self.GetCellValue(i, check_column)
-                if cell_value == check_value:
-                    if action == 'Select All':
-                        self.SelectRow(i, addToSelected=True)
-                    elif action == 'Deselect All':
-                        self.DeselectRow(i)
+                for i in range(0, self.NumberRows):
+                    cell_value = self.GetCellValue(i, check_column)
+                    if cell_value == check_value:
+                        if action == 'Select All':
+                            self.SelectRow(i, addToSelected=True)
+                        elif action == 'Deselect All':
+                            self.DeselectRow(i)
 
     @staticmethod
     def GetFlags(flags=0, expand=True, top=True, bottom=True, left=True, right=True):
