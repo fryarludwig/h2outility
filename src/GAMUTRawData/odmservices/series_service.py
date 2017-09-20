@@ -361,9 +361,11 @@ class SeriesService():
             query = q.statement.compile(dialect=self._session_factory.engine.dialect)
             array = pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params)
             return array
+        except MemoryError as e:
+            print 'Memory Error encountered during query!!\nError: {}\n'.format(type(e), e)
         except Exception as e:
+            print 'Unexpected error encountered during query\nType: {}\nError: {}\n\n'.format(type(e), e)
             print e
-            return []
 
     def get_all_values_by_site_id(self, my_site_id):
         try:
@@ -376,11 +378,13 @@ class SeriesService():
             query = q.statement.compile(dialect=self._session_factory.engine.dialect)
             array = pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params)
             return array
+        except MemoryError as e:
+            print 'Memory Error encountered during query!!\nError: {}\n'.format(type(e), e)
         except Exception as e:
+            print 'Unexpected error encountered during query\nType: {}\nError: {}\n\n'.format(type(e), e)
             print e
-            return []
 
-    def get_values_by_filters(self, site_id, qc_id, source_id, method_id, var_ids, year=None):
+    def get_values_by_filters(self, site_id, qc_id, source_id, method_ids, var_ids, year=None):
         try:
             if year is None:
                 q = self._edit_session.query(DataValue, Variable.code).filter(DataValue.site_id == site_id,
@@ -388,7 +392,7 @@ class SeriesService():
                                                                           DataValue.variable_id == Variable.id,
                                                                           DataValue.quality_control_level_id == qc_id,
                                                                           DataValue.source_id == source_id,
-                                                                          DataValue.method_id.in_(method_id))
+                                                                          DataValue.method_id.in_(method_ids))
             else:
                 year_start = '{}-01-01 00:00:00'.format(year)
                 year_end = '{}-12-31 23:59:59'.format(year)
@@ -398,13 +402,21 @@ class SeriesService():
                                                                DataValue.variable_id == Variable.id,
                                                                DataValue.quality_control_level_id == qc_id,
                                                                DataValue.source_id == source_id,
-                                                               DataValue.method_id.in_(method_id))
+                                                               DataValue.method_id.in_(method_ids))
             query = q.statement.compile(dialect=self._session_factory.engine.dialect)
-            return pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params,
-                                         coerce_float=False)
+            result = None
+            for chunk in pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params,
+                                               coerce_float=False, chunksize=100000):
+                if result is None:
+                    result = chunk
+                else:
+                    result = pandas.concat([result, chunk], copy=False)
+            return result
+        except MemoryError as e:
+            print 'Memory Error encountered during query!!\nError: {}\n'.format(type(e), e)
         except Exception as e:
+            print 'Unexpected error encountered during query\nType: {}\nError: {}\n\n'.format(type(e), e)
             print e
-            return []
 
     def get_variables_by_site_id_qc(self, variable_id, my_site_id, qc):
         """

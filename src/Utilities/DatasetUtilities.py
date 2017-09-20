@@ -139,7 +139,9 @@ def createFile(filepath):
 def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, year=None):
     csv_table = None
     dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, variables, year)
-    if len(dataframe) == 0:
+    if dataframe is None:
+        pass
+    elif len(dataframe) == 0:
         pass
     elif qc_id == 0 or len(variables) != 1 or len(methods) != 1:
         csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
