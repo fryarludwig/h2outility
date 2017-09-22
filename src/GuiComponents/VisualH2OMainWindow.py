@@ -93,6 +93,7 @@ class VisualH2OWindow(wx.Frame):
     def _setup_h2o_subscriptions(self):
         H2O_SUBSCRIPTIONS = [
             (self.OnPrintLog, 'logger'),
+            (self.OnOperationsStopped, 'Operations_Stopped'),
             (self.OnDatasetsGenerated, 'Datasets_Completed'),
             (self.OnFileGenerationFailed, 'File_Failed'),
             (self.update_status_gauge_datasets, 'Dataset_Started'),
@@ -322,10 +323,7 @@ class VisualH2OWindow(wx.Frame):
 
         self.available_series_grid.Clear()
         self.selected_series_grid.Clear()
-
-        for series in self.odm_series_dict.values():
-            self.available_series_grid.AppendSeries(series)
-
+        self.available_series_grid.InsertSeriesList(self.odm_series_dict.values())
         self.remove_selected_button.Enable()
         self.add_to_selected_button.Enable()
 
@@ -413,7 +411,6 @@ class VisualH2OWindow(wx.Frame):
         self._update_target_choices()
         self.hs_resource_choice.SetStringSelection(HS_RES_STR(resource))
 
-
     def _verify_dataset_selections(self):
         if len(self.selected_series_grid.GetSeries()) == 0:
             self.OnPrintLog('Invalid options - please select the ODM series you would like to add to the dataset')
@@ -431,12 +428,14 @@ class VisualH2OWindow(wx.Frame):
 
     def OnRunScriptClicked(self, event):
         self.OnPrintLog('Running script')
+        self.run_script_button.Enable(enable=False)
+        self.stop_script_button.Enable(enable=True)
         self.H2OService.SaveData()
         self.H2OService.LoadData()
         self.H2OService.StartOperations()
 
     def OnStopScriptClicked(self, event):
-        self.OnPrintLog('Stopping the script... This may take few moments')
+        self.OnPrintLog('Stopping the script... This may take up to a minute')
         self.H2OService.StopActions()
         self.status_gauge.SetValue(0)
 
@@ -504,8 +503,14 @@ class VisualH2OWindow(wx.Frame):
     def _sort_resource_choices(self, event):
         WxHelper.UpdateChoiceControl(self.hs_resource_choice, self._get_destination_resource_choices())
 
-    def OnDatasetsGenerated(self, completed):
-        self.OnPrintLog('Finished generating {} files for upload to HydroShare'.format(completed))
+    def OnOperationsStopped(self, message):
+        self.run_script_button.Enable(enable=True)
+        self.stop_script_button.Enable(enable=False)
+        self.OnPrintLog(message)
+        self.status_gauge.SetValue(0)
+
+    def OnDatasetsGenerated(self, completed, total):
+        self.OnPrintLog('Generation stopped, created files for {}/{} HydroShare resources'.format(completed, total))
         self.status_gauge.SetValue(0)
 
     def OnFileGenerationFailed(self, filename, message):
@@ -680,18 +685,18 @@ class VisualH2OWindow(wx.Frame):
         # Build action sizer and logging box #
         ######################################
 
-        toggle_execute_button = WxHelper.GetButton(self, self.panel, u"Run Script", self.OnRunScriptClicked)
-        save_config_button = WxHelper.GetButton(self, self.panel, u"Stop Script", self.OnStopScriptClicked)
+        self.run_script_button = WxHelper.GetButton(self, self.panel, u"Run Script", self.OnRunScriptClicked)
+        self.stop_script_button = WxHelper.GetButton(self, self.panel, u"Stop Script", self.OnStopScriptClicked)
 
         self.status_gauge = wx.Gauge(self.panel, wx.ID_ANY, 100, wx.DefaultPosition, wx.DefaultSize, wx.GA_HORIZONTAL)
         self.status_gauge.SetValue(0)
 
         self.log_message_listbox = WxHelper.GetListBox(self, self.panel, [], size_x=920, size_y=100,
-                                                       font=self.MONOSPACE)
+                                                       font=self.MONOSPACE, on_right_click=self.OnRightClickLogOutput)
 
         action_status_sizer.Add(self.status_gauge, pos=(0, 0), span=(1, 8), flag=ALIGN.CENTER)
-        action_status_sizer.Add(toggle_execute_button, pos=(0, 9), span=(1, 1), flag=ALIGN.CENTER)
-        action_status_sizer.Add(save_config_button, pos=(0, 8), span=(1, 1), flag=ALIGN.CENTER)
+        action_status_sizer.Add(self.run_script_button, pos=(0, 9), span=(1, 1), flag=ALIGN.CENTER)
+        action_status_sizer.Add(self.stop_script_button, pos=(0, 8), span=(1, 1), flag=ALIGN.CENTER)
         action_status_sizer.Add(self.log_message_listbox, pos=(1, 0), span=(2, 10), flag=ALIGN.CENTER)
 
         ######################################
@@ -717,12 +722,25 @@ class VisualH2OWindow(wx.Frame):
         WxHelper.AddNewMenuItem(self, file_menu, u'Resource Templates...', self.OnEditResourceTemplates)
 
         file_menu.AppendSeparator()
-        file_menu.Append(wx.ID_EXIT, 'Quit', 'Quit application')
+        WxHelper.AddNewMenuItem(self, file_menu, u'Quit', self.OnQuitClicked)
+        # file_menu.Append(wx.ID_EXIT, 'Quit', 'Quit application')
 
         menuBar = wx.MenuBar()
         menuBar.Append(file_menu, "&File")  # Adding the "filemenu" to the MenuBar
         self.SetMenuBar(menuBar)  # Adding the MenuBar to the Frame content.
         return main_sizer
+
+    def OnRightClickLogOutput(self, event):
+        message = 'Print only important log messages' if APP_SETTINGS.VERBOSE else 'Print all log messages'
+        menu = wx.Menu()
+        WxHelper.AddNewMenuItem(self, menu, message, on_click=self.ToggleVerbose)
+        self.PopupMenu(menu)
+
+    def OnQuitClicked(self, event):
+        exit(0)
+
+    def ToggleVerbose(self, event):
+        APP_SETTINGS.VERBOSE = not APP_SETTINGS.VERBOSE
 
     def AddLineToMainSizer(self, parent, border=10, flags=wx.ALL | wx.EXPAND):
         parent.Add(wx.StaticLine(self.panel), 0, flag=flags, border=border)

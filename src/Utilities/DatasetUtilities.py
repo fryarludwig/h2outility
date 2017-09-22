@@ -10,10 +10,10 @@ from multiprocessing import Process, Queue
 from time import sleep
 from sqlalchemy.exc import InvalidRequestError
 
-# from HydroShareUtility import HydroShareResource
-# from H2OServices import H2OSeries
 from GAMUTRawData.odmdata import Series
 from GAMUTRawData.odmdata import Site
+from GAMUTRawData.odmdata import Source
+from GAMUTRawData.odmdata import QualityControlLevel
 from GAMUTRawData.odmdata import SpatialReference
 from GAMUTRawData.odmdata import Qualifier
 from GAMUTRawData.odmdata import DataValue
@@ -162,10 +162,8 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
         csv_table.rename(columns={"DataValue": series_list[0].variable.code}, inplace=True)
     return csv_table
 
-
-def BuildCsvFiles(series_service, series_list, chunk_years, failed_files=[]):
-    # type: (SeriesService, list[Series], bool) -> list[str]
-    file_list = []
+def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
+    # type: (SeriesService, list[Series], int, list[tuple(str)]) -> str
     base_name = '{}ODM_Series_'.format(APP_SETTINGS.DATASET_DIR)
     variables = set([series.variable_id for series in series_list])
     methods = set([series.method_id for series in series_list])
@@ -178,7 +176,8 @@ def BuildCsvFiles(series_service, series_list, chunk_years, failed_files=[]):
         print '{}: {}'.format(varname(qc_ids), qc_ids)
         print '{}: {}'.format(varname(site_ids), site_ids)
         print '{}: {}\n'.format(varname(source_ids), source_ids)
-        return file_list
+    elif len(variables) == 0 or len(methods) == 0:
+        print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
     else:
         site = series_list[0].site                  # type: Site
         source = series_list[0].source              # type: Source
@@ -189,44 +188,23 @@ def BuildCsvFiles(series_service, series_list, chunk_years, failed_files=[]):
         if len(variables) == 1:
             base_name += '{}_'.format(series_list[0].variable_code)
         base_name += 'at_{}_Source_{}_QC_Code_{}'.format(site.code, source.id, qc.code)
-        if chunk_years:
-            base_name += '_{}'
-        base_name += '.csv'
-    if len(variables) == 0 or len(methods) == 0:
-        print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
+        if year is not None:
+            base_name += '_{}'.format(year)
+        file_name = base_name + '.csv'
 
-        return file_list
-
-    print 'Starting to generate files'
-    if chunk_years:
-        years = GetSeriesYearRange(series_list)
-        for year in years:
-            name_with_year = base_name.format(year)
-            dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
-            if dataframe is None:
-                print 'No data values exist for site {} and year {}'.format(site.code, year)
-                failed_files.append((name_with_year, 'No data values found for file'))
-                continue
-            headers = BuildSeriesFileHeader(series_list, site, source)
-            if WriteSeriesToFile(name_with_year, dataframe, headers):
-                file_list.append(name_with_year)
-            else:
-                print 'Unable to write series to file {}'.format(name_with_year)
-                failed_files.append((name_with_year, 'Unable to write series to file'))
-    else:
-        print 'Dataframe for {}'.format(variables)
-        dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables)
+        print 'Querying values for site {}, source {}, qc {}, year {} '.format(site.code, source.id, qc.code, year)
+        dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
         if dataframe is not None:
             headers = BuildSeriesFileHeader(series_list, site, source)
             if WriteSeriesToFile(base_name, dataframe, headers):
-                file_list.append(base_name)
+                return file_name
             else:
                 print 'Unable to write series to file {}'.format(base_name)
                 failed_files.append((base_name, 'Unable to write series to file'))
         else:
             print 'No data values exist for this dataset'
             failed_files.append((base_name, 'No data values found for file'))
-    return file_list
+    return None
 
 
 def WriteSeriesToFile(csv_name, dataframe, headers):

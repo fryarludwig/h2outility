@@ -131,7 +131,6 @@ class OdmSeriesHelper:
         :returns list[list[H2OSeries]]
         """
         chunks = {}
-
         if resource.single_file:  # If we should group into the fewest possible files
             for series in resource.selected_series.itervalues():
                 series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)

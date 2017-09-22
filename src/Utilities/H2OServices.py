@@ -13,7 +13,8 @@ from exceptions import IOError
 
 from GAMUTRawData.odmservices import ServiceManager
 from GAMUTRawData.odmdata import Series
-from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection, BuildCsvFiles
+from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection, BuildCsvFile, \
+    GetSeriesYearRange
 from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException, \
     HydroShareAccountDetails, ResourceTemplate
 from H2OSeries import H2OSeries, OdmSeriesHelper
@@ -23,8 +24,13 @@ __title__ = 'H2O Service'
 
 
 class H2OService:
+    class StopThreadException(Exception):
+        def __init__(self, args):
+            super(H2OService.StopThreadException, self).__init__(args)
+
     GUI_PUBLICATIONS = {
         'logger': lambda message: {'message': message},
+        'Operations_Stopped': lambda message: {'message': message},
         'Datasets_Completed': lambda completed, total: {'completed': completed, 'total': total},
         'File_Failed': lambda filename, message: {'filename': filename, 'message': message},
         'Dataset_Started': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
@@ -45,7 +51,7 @@ class H2OService:
         sys.stdout = H2OLogger(log_to_gui='logger' in self.Subscriptions)
 
         self.ThreadedFunction = None  # type: Thread
-        self.ThreadKiller = ['Continue']
+        self.StopThread = False
 
         self.ActiveHydroshare = None  # type: HydroShareUtility
 
@@ -54,7 +60,10 @@ class H2OService:
         self.csv_columns = ["DataValue", "LocalDateTime", "UTCOffset", "DateTimeUTC"]
 
     def _thread_checkpoint(self):
-        return self.ThreadKiller[0] == 'Continue'
+        if self.StopThread:
+            raise H2OService.StopThreadException("Thread stopped by user")
+        else:
+            return True
 
     def _generate_datasets(self):
         dataset_count = len(self.ManagedResources)
@@ -80,18 +89,25 @@ class H2OService:
                                                          'per year' if resource.chunk_years else '')
                 for chunk in chunks:
                     self._thread_checkpoint()
-                    odm_series = [OdmSeriesHelper.GetOdmSeriesFromH2OSeries(series_service, h2o) for h2o in chunk]
                     failed_files = []
-                    resource.associated_files += BuildCsvFiles(series_service, odm_series, resource.chunk_years,
-                                                               failed_files)
+                    odm_series = [OdmSeriesHelper.GetOdmSeriesFromH2OSeries(series_service, h2o) for h2o in chunk]
+                    if resource.chunk_years:
+                        for year in GetSeriesYearRange(odm_series):
+                            self._thread_checkpoint()
+                            result_file = BuildCsvFile(series_service, odm_series, year, failed_files)
+                            if result_file is not None:
+                                resource.associated_files.append(result_file)
+                    else:
+                        self._thread_checkpoint()
+                        result_file = BuildCsvFile(series_service, odm_series, failed_files=failed_files)
+                        if result_file is not None:
+                            resource.associated_files.append(result_file)
                     for filename, message in failed_files:
                         self.NotifyVisualH2O('File_Failed', filename, message)
                 self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
             print 'Dataset generation completed without error'
-        except TypeError as e:
-            print 'Dataset generation stopped without finishing'
-            if APP_SETTINGS.H2O_DEBUG:
-                print 'Exception encountered while running thread: {}'.format(e)
+        except H2OService.StopThreadException as e:
+            print 'Dataset generation stopped: {}'.format(e.message)
         except Exception as e:
             print 'Exception encountered while generating datasets:\n{}'.format(e)
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
@@ -111,16 +127,16 @@ class H2OService:
                     self.ConnectToHydroShareAccount(resource.hs_account_name)
                     current_account_name = resource.hs_account_name
 
+                self._thread_checkpoint()
                 response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
                 if APP_SETTINGS.VERBOSE:
                     print response
+                self._thread_checkpoint()
                 self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
                 resource_names.append(resource.resource.title)
                 self.NotifyVisualH2O('Files_Uploaded', resource.resource.title, current_dataset, dataset_count)
-            except TypeError as e:
-                print 'File uploading stopped without finishing'
-                if APP_SETTINGS.H2O_DEBUG:
-                    print 'Exception encountered while running thread: {}'.format(e)
+            except H2OService.StopThreadException as e:
+                print 'File upload stopped: {}'.format(e.message)
                 break
             except Exception as e:
                 print e
@@ -152,21 +168,26 @@ class H2OService:
 
     def StopActions(self):
         if self.ThreadedFunction is not None:
-            self.ThreadedFunction.join(1)
-            self.ThreadKiller = None
+            self.StopThread = True
+            self.ThreadedFunction.join(3)
 
     def _start_as_thread(self, thread_func):
         if self.ThreadedFunction is not None and self.ThreadedFunction.is_alive():
             self.ThreadedFunction.join(3)
-        self.ThreadKiller = ['Continue']
+        self.StopThread = False
         self.ThreadedFunction = Thread(target=thread_func)
         self.ThreadedFunction.start()
 
     def _threaded_operations(self):
-        print 'Starting CSV file generation'
-        self._generate_datasets()
-        print '\nStarting CSV file upload'
-        self._upload_files()
+        try:
+            print 'Starting CSV file generation'
+            self._generate_datasets()
+            print '\nStarting CSV file upload'
+            self._upload_files()
+            self.NotifyVisualH2O('Operations_Stopped', 'Script completed successfully')
+        except H2OService.StopThreadException as e:
+            print 'File generation and uploads stopped: {}'.format(e.message)
+            self.NotifyVisualH2O('Operations_Stopped', 'Script stopped by user')
 
     def StartOperations(self, blocking=False):
         if blocking:
@@ -182,11 +203,11 @@ class H2OService:
                 result = H2OService.GUI_PUBLICATIONS[pub_key](*args)
                 pub.sendMessage(pub_key, **result)
             else:
-                print 'Nowhere to go for message: {}'.format(H2OService.GUI_PUBLICATIONS[pub_key](*args))
+                print 'No destination for message: {}'.format(H2OService.GUI_PUBLICATIONS[pub_key](*args))
                 print 'GUI Mode: {}'.format(APP_SETTINGS.GUI_MODE)
                 print 'Pub Key: {}; Exists: {}'.format(pub_key, pub_key in H2OService.GUI_PUBLICATIONS.keys())
         except Exception as e:
-            print 'Exception: {}\nUnknown key {} or invalid args {}'.format(e, pub_key, args)
+            print '{} Exception: {}\nUnknown key {} or invalid args {}'.format(type(e), e, pub_key, args)
 
     def to_json(self):
         return {'odm_connections': self.DatabaseConnections,
