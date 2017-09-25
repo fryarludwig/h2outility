@@ -162,48 +162,55 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
         csv_table.rename(columns={"DataValue": series_list[0].variable.code}, inplace=True)
     return csv_table
 
+
 def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
     # type: (SeriesService, list[Series], int, list[tuple(str)]) -> str
-    base_name = '{}ODM_Series_'.format(APP_SETTINGS.DATASET_DIR)
-    variables = set([series.variable_id for series in series_list])
-    methods = set([series.method_id for series in series_list])
-    qc_ids = set([series.quality_control_level_id for series in series_list])
-    site_ids = set([series.site_id for series in series_list])
-    source_ids = set([series.source_id for series in series_list])
+    try:
+        base_name = '{}ODM_Series_'.format(APP_SETTINGS.DATASET_DIR)
+        if len(series_list) == 0:
+            print 'Cannot generate a file for no series'
+            return None
+        variables = set([series.variable_id for series in series_list])
+        methods = set([series.method_id for series in series_list])
+        qc_ids = set([series.quality_control_level_id for series in series_list])
+        site_ids = set([series.site_id for series in series_list])
+        source_ids = set([series.source_id for series in series_list])
 
-    if len(qc_ids) != 1 or len(site_ids) != 1 or len(source_ids) != 1 and len(series_list) > 0:
-        print 'Cannot create a file that contains multiple QC, Site, or Source IDs'
-        print '{}: {}'.format(varname(qc_ids), qc_ids)
-        print '{}: {}'.format(varname(site_ids), site_ids)
-        print '{}: {}\n'.format(varname(source_ids), source_ids)
-    elif len(variables) == 0 or len(methods) == 0:
-        print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
-    else:
-        site = series_list[0].site                  # type: Site
-        source = series_list[0].source              # type: Source
-        qc = series_list[0].quality_control_level   # type: QualityControlLevel
-        variables = list(variables)
-        methods = list(methods)
-
-        if len(variables) == 1:
-            base_name += '{}_'.format(series_list[0].variable_code)
-        base_name += 'at_{}_Source_{}_QC_Code_{}'.format(site.code, source.id, qc.code)
-        if year is not None:
-            base_name += '_{}'.format(year)
-        file_name = base_name + '.csv'
-
-        print 'Querying values for site {}, source {}, qc {}, year {} '.format(site.code, source.id, qc.code, year)
-        dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
-        if dataframe is not None:
-            headers = BuildSeriesFileHeader(series_list, site, source)
-            if WriteSeriesToFile(base_name, dataframe, headers):
-                return file_name
-            else:
-                print 'Unable to write series to file {}'.format(base_name)
-                failed_files.append((base_name, 'Unable to write series to file'))
+        if len(qc_ids) != 1 or len(site_ids) != 1 or len(source_ids) != 1:
+            print 'Cannot create a file that contains multiple QC, Site, or Source IDs'
+            print '{}: {}'.format(varname(qc_ids), qc_ids)
+            print '{}: {}'.format(varname(site_ids), site_ids)
+            print '{}: {}\n'.format(varname(source_ids), source_ids)
+        elif len(variables) == 0 or len(methods) == 0:
+            print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
         else:
-            print 'No data values exist for this dataset'
-            failed_files.append((base_name, 'No data values found for file'))
+            site = series_list[0].site                  # type: Site
+            source = series_list[0].source              # type: Source
+            qc = series_list[0].quality_control_level   # type: QualityControlLevel
+            variables = list(variables)
+            methods = list(methods)
+
+            if len(variables) == 1:
+                base_name += '{}_'.format(series_list[0].variable_code)
+            base_name += 'at_{}_Source_{}_QC_Code_{}'.format(site.code, source.id, qc.code)
+            if year is not None:
+                base_name += '_{}'.format(year)
+            file_name = base_name + '.csv'
+
+            print 'Querying values for site {}, source {}, qc {}, year {} '.format(site.code, source.id, qc.code, year)
+            dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
+            if dataframe is not None:
+                headers = BuildSeriesFileHeader(series_list, site, source)
+                if WriteSeriesToFile(base_name, dataframe, headers):
+                    return file_name
+                else:
+                    print 'Unable to write series to file {}'.format(base_name)
+                    failed_files.append((base_name, 'Unable to write series to file'))
+            else:
+                print 'No data values exist for this dataset'
+                failed_files.append((base_name, 'No data values found for file'))
+    except TypeError as e:
+        print 'Exception encountered while building a csv file: {}'.format(e)
     return None
 
 

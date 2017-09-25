@@ -129,7 +129,7 @@ class H2OService:
 
                 self._thread_checkpoint()
                 response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
-                if APP_SETTINGS.VERBOSE:
+                if APP_SETTINGS.VERBOSE and APP_SETTINGS.H2O_DEBUG:
                     print response
                 self._thread_checkpoint()
                 self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)

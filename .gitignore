@@ -73,3 +73,4 @@ src/secret_dev
 src/temporary_metadata*
 src/GAMUT_CSV_Files_old
 src/resourcemetadata.xml
+src/H2O_dataset_files

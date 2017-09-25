@@ -101,10 +101,13 @@ class OdmSeriesHelper:
         """
         :type series: Series
         """
-        return H2OSeries(SeriesID=series.id, SiteID=series.site_id, VariableID=series.variable_id,
-                         MethodID=series.method_id, SourceID=series.source_id, VariableCode=series.variable_code,
-                         QualityControlLevelID=series.quality_control_level_id, SiteCode=series.site_code,
-                         QualityControlLevelCode=series.quality_control_level_code)
+        if series is None:
+            return None
+        else:
+            return H2OSeries(SeriesID=series.id, SiteID=series.site_id, VariableID=series.variable_id,
+                             MethodID=series.method_id, SourceID=series.source_id, VariableCode=series.variable_code,
+                             QualityControlLevelID=series.quality_control_level_id, SiteCode=series.site_code,
+                             QualityControlLevelCode=series.quality_control_level_code)
 
     @staticmethod
     def GetOdmSeriesFromH2OSeries(series_service, h2o_series):

@@ -4,7 +4,7 @@ A GUI-based and optionally headless tool to select times series values from a Hy
 
 ###### Requirements ######
 
-These tools are written for Python 2.7.X
+These tools are written for Python 2.7.X 64-bit. Depending on the size of your datasets, 32-bit Python may run out of usable memory and cause requests to fail.
 
 To download, install, and run this project, execute the following commands:
 
