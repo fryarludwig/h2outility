@@ -35,10 +35,8 @@ class H2OService:
         'File_Failed': lambda filename, message: {'filename': filename, 'message': message},
         'Dataset_Started': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
         'Dataset_Generated': lambda resource, done, total: {'completed': ((done * 100) / total) - 1, 'resource': resource},
-        # 'Dataset_Generated': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource},
         'Files_Uploaded': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
         'Uploads_Completed': lambda resource, done, total: {'completed': ((done * 100) / total) - 1, 'resource': resource}
-        # 'Uploads_Completed': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource}
     }
 
     def __init__(self, hydroshare_connections=None, odm_connections=None, resource_templates=None, subscriptions=None,

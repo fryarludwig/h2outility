@@ -164,7 +164,6 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
 def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
     # type: (SeriesService, list[Series], int, list[tuple(str)]) -> str
     try:
-        base_name = '{}ODM_Series_'.format(APP_SETTINGS.DATASET_DIR)
         if len(series_list) == 0:
             print 'Cannot generate a file for no series'
             return None
@@ -188,9 +187,10 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
             variables = list(variables)
             methods = list(methods)
 
+            base_name = '{}{}_'.format(APP_SETTINGS.DATASET_DIR, site.code)
             if len(variables) == 1:
                 base_name += '{}_'.format(series_list[0].variable_code)
-            base_name += 'at_{}_Source_{}_QC_Code_{}'.format(site.code, source.id, qc.code)
+            base_name += 'QC_{}_Source_{}'.format(qc.code, source.id)
             if year is not None:
                 base_name += '_{}'.format(year)
             file_name = base_name + '.csv'
@@ -198,6 +198,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
             print 'Querying values for site {}, source {}, qc {}, year {} '.format(site.code, source.id, qc.code, year)
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
             if dataframe is not None:
+                dataframe.sort_index(inplace=True)
                 headers = BuildSeriesFileHeader(series_list, site, source)
                 if WriteSeriesToFile(file_name, dataframe, headers):
                     return file_name
