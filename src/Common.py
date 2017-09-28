@@ -21,9 +21,14 @@ class Common:
         """
         General constants and non-class variables
         """
+        settings_file = 'operations_file.json'
+        for item in args:
+            if '--settings_file=' in item:
+                settings_file = item.split('--settings_file=')[1]
+
         self.IS_WINDOWS = 'nt' in os.name
         self.PROJECT_DIR = str(os.path.dirname(os.path.realpath(__file__)))
-        self.SETTINGS_FILE_NAME = self.PROJECT_DIR + '/operations_file.json'
+        self.SETTINGS_FILE_NAME = self.PROJECT_DIR + '/' + settings_file
         self.DATASET_DIR = '{}/H2O_dataset_files/'.format(self.PROJECT_DIR)
         self.LOGFILE_DIR = '{}/logs/'.format(self.PROJECT_DIR)
         self.GUI_MODE = False

@@ -118,13 +118,11 @@ class OdmDatasetConnection:
 
     def ToDict(self):
         return {'engine': self.engine, 'user': self.user, 'password': self.password, 'address': self.address,
-                'db': self.database}
+                'db': self.database, 'port': self.port}
 
 
 # HEADER_LINE = '# '
 DELIMITER = '# {}'.format('-' * 90)
-CSV_FILENAME_YEAR = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}_{}.csv'
-CSV_FILENAME_DEFAULT = '{}ODM_Series_at_{}_Source_{}_QC_Code_{}.csv'
 
 
 def createFile(filepath):
@@ -170,11 +168,11 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
         if len(series_list) == 0:
             print 'Cannot generate a file for no series'
             return None
-        variables = set([series.variable_id for series in series_list])
-        methods = set([series.method_id for series in series_list])
-        qc_ids = set([series.quality_control_level_id for series in series_list])
-        site_ids = set([series.site_id for series in series_list])
-        source_ids = set([series.source_id for series in series_list])
+        variables = set([series.variable_id for series in series_list if series is not None])
+        methods = set([series.method_id for series in series_list if series is not None])
+        qc_ids = set([series.quality_control_level_id for series in series_list if series is not None])
+        site_ids = set([series.site_id for series in series_list if series is not None])
+        source_ids = set([series.source_id for series in series_list if series is not None])
 
         if len(qc_ids) != 1 or len(site_ids) != 1 or len(source_ids) != 1:
             print 'Cannot create a file that contains multiple QC, Site, or Source IDs'
@@ -201,14 +199,14 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
             if dataframe is not None:
                 headers = BuildSeriesFileHeader(series_list, site, source)
-                if WriteSeriesToFile(base_name, dataframe, headers):
+                if WriteSeriesToFile(file_name, dataframe, headers):
                     return file_name
                 else:
-                    print 'Unable to write series to file {}'.format(base_name)
-                    failed_files.append((base_name, 'Unable to write series to file'))
+                    print 'Unable to write series to file {}'.format(file_name)
+                    failed_files.append((file_name, 'Unable to write series to file'))
             else:
                 print 'No data values exist for this dataset'
-                failed_files.append((base_name, 'No data values found for file'))
+                failed_files.append((file_name, 'No data values found for file'))
     except TypeError as e:
         print 'Exception encountered while building a csv file: {}'.format(e)
     return None

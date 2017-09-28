@@ -34,9 +34,11 @@ class H2OService:
         'Datasets_Completed': lambda completed, total: {'completed': completed, 'total': total},
         'File_Failed': lambda filename, message: {'filename': filename, 'message': message},
         'Dataset_Started': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
-        'Dataset_Generated': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource},
+        'Dataset_Generated': lambda resource, done, total: {'completed': ((done * 100) / total) - 1, 'resource': resource},
+        # 'Dataset_Generated': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource},
         'Files_Uploaded': lambda resource, done, total: {'started': ((done * 100) / total) - 1, 'resource': resource},
-        'Uploads_Completed': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource}
+        'Uploads_Completed': lambda resource, done, total: {'completed': ((done * 100) / total) - 1, 'resource': resource}
+        # 'Uploads_Completed': lambda resource, done, total: {'completed': (done * 100) / total, 'resource': resource}
     }
 
     def __init__(self, hydroshare_connections=None, odm_connections=None, resource_templates=None, subscriptions=None,
@@ -68,8 +70,8 @@ class H2OService:
     def _generate_datasets(self):
         dataset_count = len(self.ManagedResources)
         current_dataset = 0
-        try:
-            for resource in self.ManagedResources.itervalues():
+        for resource in self.ManagedResources.itervalues():
+            try:
                 self._thread_checkpoint()
                 if resource.resource is None:
                     print 'Error encountered: resource details for resource {} are missing'.format(resource.resource_id)
@@ -105,11 +107,12 @@ class H2OService:
                     for filename, message in failed_files:
                         self.NotifyVisualH2O('File_Failed', filename, message)
                 self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
-            print 'Dataset generation completed without error'
-        except H2OService.StopThreadException as e:
-            print 'Dataset generation stopped: {}'.format(e.message)
-        except Exception as e:
-            print 'Exception encountered while generating datasets:\n{}'.format(e)
+            except H2OService.StopThreadException as e:
+                print 'Dataset generation stopped: {}'.format(e.message)
+                break
+            except Exception as e:
+                print 'Exception encountered while generating datasets:\n{}'.format(e)
+        print 'Dataset generation completed without error'
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 
     def _upload_files(self):
@@ -118,7 +121,6 @@ class H2OService:
         current_account_name = 'None'
         resource_names = []
         for resource in self.ManagedResources.values():
-            current_dataset += 1
             self._thread_checkpoint()
             print 'Uploading files to resource {}'.format(resource.resource.title)
             try:
@@ -132,8 +134,11 @@ class H2OService:
                 if APP_SETTINGS.VERBOSE and APP_SETTINGS.H2O_DEBUG:
                     print response
                 self._thread_checkpoint()
+                # self.ActiveHydroshare.deleteFilesInResource(resource.resource_id)
                 self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
+                # self.ActiveHydroshare.setResourcesAsPublic([resource.resource_id])
                 resource_names.append(resource.resource.title)
+                current_dataset += 1
                 self.NotifyVisualH2O('Files_Uploaded', resource.resource.title, current_dataset, dataset_count)
             except H2OService.StopThreadException as e:
                 print 'File upload stopped: {}'.format(e.message)
@@ -170,6 +175,8 @@ class H2OService:
         if self.ThreadedFunction is not None:
             self.StopThread = True
             self.ThreadedFunction.join(3)
+        else:
+            self.NotifyVisualH2O('Operations_Stopped', 'Script was not running')
 
     def _start_as_thread(self, thread_func):
         if self.ThreadedFunction is not None and self.ThreadedFunction.is_alive():
@@ -242,8 +249,11 @@ class H2OService:
             json_in.close()
             print 'Dataset information loaded from {}'.format(input_file)
             return True
-        except IOError as e:
-            print 'Error reading input file data from {}:\n\t{}'.format(input_file, e)
+        except IOError:
+            json_out = open(input_file, 'w')
+            json_out.write(jsonpickle.encode(self.to_json()))
+            json_out.close()
+            print 'Settings file does not exist - creating: {}'.format(input_file)
             return False
 
     def CreateResourceFromTemplate(self, template):

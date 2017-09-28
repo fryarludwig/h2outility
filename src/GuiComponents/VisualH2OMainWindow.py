@@ -57,7 +57,7 @@ class VisualH2OWindow(wx.Frame):
         self._resources = None  # type: dict[str, HydroShareResource]
 
         # Widgets
-        self.status_gauge = None  # type: WxHelper.SimpleGauge
+        self.status_gauge = None  # type: wx.Gauge
         self.database_connection_choice = None  # type: wx.Choice
         self.hydroshare_account_choice = None  # type: wx.Choice
         self.mapping_grid = None  # type: WxHelper.SeriesGrid
@@ -117,8 +117,8 @@ class VisualH2OWindow(wx.Frame):
         self.log_message_listbox.Deselect(len(self.log_message_listbox.Items) - 1)
 
     def UpdateControls(self, progress=None):
-        if progress is not None:
-            self.status_gauge = progress if 100 >= progress >= 0 else progress % 100
+        # if progress is not None:
+        #     self.status_gauge = progress if 100 >= progress >= 0 else progress % 100
         WxHelper.UpdateChoiceControl(self.database_connection_choice, self._get_database_choices())
         WxHelper.UpdateChoiceControl(self.hydroshare_account_choice, self._get_hydroshare_choices())
 
@@ -436,8 +436,8 @@ class VisualH2OWindow(wx.Frame):
 
     def OnStopScriptClicked(self, event):
         self.OnPrintLog('Stopping the script... This may take up to a minute')
+        self.status_gauge.Pulse()
         self.H2OService.StopActions()
-        self.status_gauge.SetValue(0)
 
     def _destination_resource_changed(self, event):
         if self.hs_resource_choice.GetStringSelection() == CHOICE_DEFAULTS.CREATE_NEW_RESOURCE:
@@ -687,6 +687,7 @@ class VisualH2OWindow(wx.Frame):
 
         self.run_script_button = WxHelper.GetButton(self, self.panel, u"Run Script", self.OnRunScriptClicked)
         self.stop_script_button = WxHelper.GetButton(self, self.panel, u"Stop Script", self.OnStopScriptClicked)
+        self.stop_script_button.Enable(enable=False)
 
         self.status_gauge = wx.Gauge(self.panel, wx.ID_ANY, 100, wx.DefaultPosition, wx.DefaultSize, wx.GA_HORIZONTAL)
         self.status_gauge.SetValue(0)

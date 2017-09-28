@@ -207,6 +207,7 @@ class HydroShareUtility:
         Given a list of files and optional global filter, find a resource that matches the site code of each file
         :param file_list: List of files to be matched with corresponding HydroShare resource_cache
         :type file_list: List of dictionary objects, formatted as {'path': path, 'name': name, 'site': site}
+        :type file_list: List of dictionary objects, formatted as {'path': path, 'name': name, 'site': site}
         :param resource_list: Resources to attempt to match to the file list
         :type resource_list: List of HydroShareResource
         :return: Returns matched and unmatched files dictionary lists in form [{'resource': resource, 'file', file_dict,
@@ -286,6 +287,9 @@ class HydroShareUtility:
         resource.files = [os.path.basename(f['url']) for f in self.getResourceFileList(resource.id)]
         return resource.files
 
+    def getFilesByResourceId(self, resource_id):
+        return [os.path.basename(f['url']) for f in self.getResourceFileList(resource_id)]
+
     def filterResourcesByRegex(self, regex_string=None, owner=None, regex_flags=re.IGNORECASE):
         """
         Apply a regex filter to all available resource_cache. Useful for finding GAMUT resource_cache
@@ -317,9 +321,11 @@ class HydroShareUtility:
             for csv_file in files:
                 try:
                     self.client.deleteResourceFile(resource_id, os.path.basename(csv_file))
-                except Exception as e:
-                    if APP_SETTINGS.H2O_DEBUG and APP_SETTINGS.VERBOSE:
-                        print 'File did not exist in remote: {}, {}'.format(type(e), e)
+                except HydroShareNotFound:
+                    pass
+                # except Exception as e:
+                #     if APP_SETTINGS.H2O_DEBUG and APP_SETTINGS.VERBOSE:
+                #         print 'File did not exist in remote: {}, {}'.format(type(e), e)
                 if type(csv_file) != str:
                     csv_file = str(csv_file)
                 self.client.addResourceFile(resource_id, csv_file)
@@ -347,10 +353,13 @@ class HydroShareUtility:
     def deleteFilesInResource(self, resource_id):
         if self.auth is None:
             raise HydroShareUtilityException("Cannot modify resources without authentication")
-        file_list = self.getResourceFileList(resource_id)
-        for file_info in file_list:
-            print os.path.basename(file_info['url'])
-            self.client.deleteResourceFile(resource_id, os.path.basename(file_info['url']))
+        try:
+            file_list = self.getResourceFileList(resource_id)
+            for file_info in file_list:
+                print os.path.basename(file_info['url'])
+                self.client.deleteResourceFile(resource_id, os.path.basename(file_info['url']))
+        except Exception as e:
+            print 'Could not delete files in resource {}\n{}'.format(resource_id, e)
 
     def removeResourceFiles(self, files_list, resource_id, quiet_fail=True):
         if self.auth is None:

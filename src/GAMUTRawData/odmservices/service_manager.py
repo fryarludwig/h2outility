@@ -20,7 +20,8 @@ class ServiceManager():
         f = self.__get_file('r')
         self._connections = []
         self.version = 0
-        self._connection_format = "%s+%s://%s:%s@%s/%s"
+        self._connection_format = "%s+%s://%s:%s@%s:%s/%s"
+        self._connection_format_nopassword = "%s+%s://%s@%s:%s/%s"
 
         # Read all lines (connections) in the connection.cfg file
         while True:
@@ -30,14 +31,14 @@ class ServiceManager():
             else:
                 line = line.split()
 
-                if len(line) >= 5:
+                if len(line) >= 6:
                     line_dict = {}
-
                     line_dict['engine'] = line[0]
                     line_dict['user'] = line[1]
                     line_dict['password'] = line[2]
                     line_dict['address'] = line[3]
-                    line_dict['db'] = line[4]
+                    line_dict['port'] = line[4]
+                    line_dict['db'] = line[5]
                     self._connections.append(line_dict)
 
         if len(self._connections) is not 0:
@@ -137,18 +138,18 @@ class ServiceManager():
             conn_string = 'mssql+pyodbc:///?odbc_connect={}'.format(quoted)
 
         elif conn_dict['engine'] == 'sqlite':
-            connformat = "%s:///%s"
-            conn_string = connformat % (conn_dict['engine'], conn_dict['address'])
+            connformat = "%s:///%s:%s"
+            conn_string = connformat % (conn_dict['engine'], conn_dict['address'], conn_dict['port'])
         else:
             if conn_dict['engine'] == 'mssql':
                 driver = "pyodbc"
-                conn = "%s+%s://%s:%s@%s/%s?driver=SQL+Server"
+                conn = "%s+%s://%s:%s@%s:%s/%s?driver=SQL+Server"
                 if "sqlncli11.dll" in os.listdir("C:\\Windows\\System32"):
-                    conn = "%s+%s://%s:%s@%s/%s?driver=SQL+Server+Native+Client+11.0"
+                    conn = "%s+%s://%s:%s@%s:%s/%s?driver=SQL+Server+Native+Client+11.0"
                 self._connection_format = conn
                 conn_string = self._connection_format % (
                     conn_dict['engine'], driver, conn_dict['user'], conn_dict['password'], conn_dict['address'],
-                    conn_dict['db'])
+                    conn_dict['port'], conn_dict['db'])
             elif conn_dict['engine'] == 'mysql':
                 driver = "pymysql"
                 conn_string = self.constringBuilder(conn_dict, driver)
@@ -165,16 +166,18 @@ class ServiceManager():
     def constringBuilder(self, conn_dict, driver):
         if conn_dict['password'] is None or not conn_dict['password']:
             conn_string = self._connection_format_nopassword % (
-                conn_dict['engine'], driver, conn_dict['user'], conn_dict['address'],
+                conn_dict['engine'], driver, conn_dict['user'], conn_dict['address'], conn_dict['port'],
                 conn_dict['db'])
         else:
             conn_string = self._connection_format % (
                 conn_dict['engine'], driver, conn_dict['user'], conn_dict['password'], conn_dict['address'],
-                conn_dict['db'])
+                conn_dict['port'], conn_dict['db'])
+        # print "******", conn_string
         return conn_string
 
     def __save_connections(self):
         f = self.__get_file('w')
         for conn in self._connections:
-            f.write("%s %s %s %s %s\n" % (conn['engine'], conn['user'], conn['password'], conn['address'], conn['db']))
+            f.write("%s %s %s %s %s %s\n" % (conn['engine'], conn['user'], conn['password'], conn['address'], conn['port'],
+                                          conn['db']))
         f.close()
