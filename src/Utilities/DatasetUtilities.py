@@ -173,7 +173,9 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
         site_ids = set([series.site_id for series in series_list if series is not None])
         source_ids = set([series.source_id for series in series_list if series is not None])
 
-        if len(qc_ids) != 1 or len(site_ids) != 1 or len(source_ids) != 1:
+        if len(qc_ids) == 0 or len(site_ids) == 0 or len(source_ids) == 0:
+            print 'Series provided are empty or invalid'
+        elif len(qc_ids) > 1 or len(site_ids) > 1 or len(source_ids) > 1:
             print 'Cannot create a file that contains multiple QC, Site, or Source IDs'
             print '{}: {}'.format(varname(qc_ids), qc_ids)
             print '{}: {}'.format(varname(site_ids), site_ids)

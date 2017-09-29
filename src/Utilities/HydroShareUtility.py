@@ -115,7 +115,6 @@ class HydroShareUtility:
             'rdfs1': "http://www.w3.org/2001/01/rdf-schema#"}
         self.time_format = '%Y-%m-%dT%H:%M:%S'
         self.xml_coverage = 'start={start}; end={end}; scheme=W3C-DTF'
-        self.resource_cache = {}  # type: dict of HSResource
 
     def authenticate(self, username, password, client_id=None, client_secret=None):
         """
@@ -172,68 +171,9 @@ class HydroShareUtility:
 
             if delete_me:
                 self.client.deleteResourceFile(resource_id, file_detail['name'])
-                # self.resource_cache[resource_id].files.remove(file_detail['name'])
                 print('Deleting file {}...'.format(file_detail['name']))
             else:
                 print('Skipping duplicate file {}...'.format(file_detail['name']))
-
-    def pairSitesToResources(self, site_list, resource_list):
-        """
-        Given a list of files and optional global filter, find a resource that matches the site code of each file
-        :param site_list: List of sites to be matched with corresponding HydroShare resource_cache
-        :type site_list: list of str
-        :param resource_list: Resources to attempt to match to the file list
-        :type resource_list: List of HydroShareResource
-        :return: Returns matched and unmatched files dictionary lists in form [{'resource': resource, 'file', file_dict,
-                 'overwrite_remote': True/False }, { ... } ]
-        """
-        matched_sites = []
-        unmatched_sites = []
-        for site in site_list:
-            found_match = False
-            for resource in resource_list:
-                # resource_title = self.resource_cache[resource_id].name
-                if not re.search(site, resource.title, re.IGNORECASE):
-                    continue
-                matched_sites.append({'resource_id': resource.title, 'site_code': site})
-                found_match = True
-                break
-            if not found_match:
-                unmatched_sites.append(site)
-        return matched_sites, unmatched_sites
-
-    def pairFilesToResources(self, file_list, resource_list):
-        """
-        Given a list of files and optional global filter, find a resource that matches the site code of each file
-        :param file_list: List of files to be matched with corresponding HydroShare resource_cache
-        :type file_list: List of dictionary objects, formatted as {'path': path, 'name': name, 'site': site}
-        :type file_list: List of dictionary objects, formatted as {'path': path, 'name': name, 'site': site}
-        :param resource_list: Resources to attempt to match to the file list
-        :type resource_list: List of HydroShareResource
-        :return: Returns matched and unmatched files dictionary lists in form [{'resource': resource, 'file', file_dict,
-                 'overwrite_remote': True/False }, { ... } ]
-        """
-        matched_files = []
-        unmatched_files = []
-        for local_file in file_list:
-            found_match = False
-            for resource in resource_list:
-                # resource_title = self.resource_cache[resource_id].name
-                if not re.search(local_file['site'], resource.title, re.IGNORECASE):
-                    continue
-                resource_files = self.getResourceFileList(resource.id)
-                file_list = []
-                for resource_file in resource_files:
-                    file_url = resource_file['url']
-                    file_list.append(file_url)
-                print file_list
-                duplicates = len([remote_file for remote_file in file_list if local_file['name'] in remote_file])
-                matched_files.append({'resource_id': resource.id, 'file': local_file, 'overwrite_remote': duplicates})
-                found_match = True
-                break
-            if not found_match:
-                unmatched_files.append(local_file)
-        return matched_files, unmatched_files
 
     def getResourceFileList(self, resource_id):
         """
@@ -343,7 +283,7 @@ class HydroShareUtility:
             raise HydroShareUtilityException("Cannot modify resources without authentication")
         for resource_id in resource_ids:
             try:
-                print 'Setting resource {} as public'.format(self.resource_cache[resource_id].name)
+                print 'Setting resource {} as public'.format(resource_id)
                 self.client.setAccessRules(resource_id, public=True)
             except HydroShareException as e:
                 print "Access rule edit failed - could not set to public due to exception: {}".format(e)
@@ -356,118 +296,38 @@ class HydroShareUtility:
         try:
             file_list = self.getResourceFileList(resource_id)
             for file_info in file_list:
-                print os.path.basename(file_info['url'])
+                print 'Deleting resource file: {}'.format(os.path.basename(file_info['url']))
                 self.client.deleteResourceFile(resource_id, os.path.basename(file_info['url']))
         except Exception as e:
             print 'Could not delete files in resource {}\n{}'.format(resource_id, e)
 
-    def removeResourceFiles(self, files_list, resource_id, quiet_fail=True):
-        if self.auth is None:
-            raise HydroShareUtilityException("Cannot modify resources without authentication")
+    def getResourceCoveragePeriod(self, resource_id):
+        metadata = self.client.getScienceMetadata(resource_id)
+        period_start = None
+        period_end = None
         try:
-            for local_file in files_list:
-                if local_file.file_name in self.resource_cache[resource_id].files:
-                    print "I'm gonna delete the file: {}".format(local_file.file_name)
-                    self.client.deleteResourceFile(resource_id, local_file.file_name)
-                elif quiet_fail:
-                    print "Cannot delete file that does not exist on HydroShare: {}".format(local_file.file_name)
-                else:
-                    resource_name = self.resource_cache[resource_id].name
-                    raise HydroShareUtilityException("Unable to delete {} on {}".format(local_file, resource_name))
-        except HydroShareException as e:
-            return ["Removal failed - could not complete upload to HydroShare due to exception: {}".format(e)]
-        except KeyError as e:
-            return ['Incorrectly formatted arguments given. Expected key not found: {}'.format(e)]
-        return []
-
-    def updateResourcePeriodMetadata(self, resource_id, period_start, period_end):
-        resource_start, resource_end = self.getResourceCoveragePeriod(resource_id)
-        if resource_start is None or resource_end is None:
-            return False
-        if period_start is None or period_end is None:
-            return False
-
-        resource_updated = False
-        if period_start < resource_start:
-            self.resource_cache[resource_id].period_start = period_start
-            resource_updated = True
-
-        if period_end > resource_end:
-            self.resource_cache[resource_id].period_end = period_end
-            resource_updated = True
-
-        if resource_updated and self.resource_cache[resource_id].metadata_xml is not None:
-            try:
-                print 'Now doing the updateResourcePeriodMetadata function stuff'
-                start = self.resource_cache[resource_id].period_start  # type: datetime
-                end = self.resource_cache[resource_id].period_end  # type: datetime
-
-                xml_tree = self.resource_cache[resource_id].metadata_xml
-                node_names = ['rdf:Description', 'dc:coverage', 'dcterms:period', 'rdf:value', 'period']
-                next_node = xml_tree
-                for level in node_names:
-                    if next_node is None:
-                        return False
-                    elif level == 'period':
-                        next_node.text = self.xml_coverage.format(start=start.strftime(self.time_format),
-                                                                  end=end.strftime(self.time_format))
-                        print next_node.text
-                    else:
-                        next_node = next_node.find(level, namespaces=self.xml_ns)
-
-                self.resource_cache[resource_id].metadata_xml = xml_tree
-                xml_string = ElementTree.tostring(self.resource_cache[resource_id].metadata_xml)
-                xml_file_name = 'resourcemetadata.xml'
-                file_out = open(xml_file_name, 'wb')
-                file_out.write(xml_string)
-                file_out.close()
-
-                # print coverage_str
-                self.client.updateScienceMetadata(resource_id, xml_file_name)
-                # os.remove(xml_file_name)
-            except Exception as e:
-                print e
-            return True
-        else:
-            return False
-
-    def getResourceCoveragePeriod(self, resource_id, refresh_cache=False):
-        if resource_id not in self.resource_cache:
-            self.resource_cache[resource_id] = HydroShareResource({'resource_id': resource_id})
-            self.resource_cache[resource_id].id = resource_id
-        if self.resource_cache[resource_id].metadata_xml is None or refresh_cache:
-            metadata = self.client.getScienceMetadata(resource_id)
-            self.resource_cache[resource_id].metadata_xml = ElementTree.fromstring(metadata)
-            self.resource_cache[resource_id].period_start = None
-            self.resource_cache[resource_id].period_end = None
-            print("Updating the metadata cache for resource {}".format(self.resource_cache[resource_id].name))
-        if self.resource_cache[resource_id].period_start is None or self.resource_cache[resource_id].period_end is None:
-            try:
-                xml_tree = self.resource_cache[resource_id].metadata_xml
-                description_node = xml_tree.find('rdf:Description', namespaces=self.xml_ns)
-                coverage_node = description_node.find('dc:coverage', namespaces=self.xml_ns)
-                period_node = coverage_node.find('dcterms:period', namespaces=self.xml_ns)
-                value_node = period_node.find('rdf:value', namespaces=self.xml_ns)
-                match = self.re_period.match(value_node.text)
-                if match is not None:
-                    self.resource_cache[resource_id].period_start = dateutil.parser.parse(match.group('start'))
-                    self.resource_cache[resource_id].period_end = dateutil.parser.parse(match.group('end'))
-            except Exception as e:
-                print("Unable to find coverage data - encountered exception {}".format(e.message))
-        return self.resource_cache[resource_id].period_start, self.resource_cache[resource_id].period_end
+            xml_tree = ElementTree.fromstring(metadata)
+            description_node = xml_tree.find('rdf:Description', namespaces=self.xml_ns)
+            coverage_node = description_node.find('dc:coverage', namespaces=self.xml_ns)
+            period_node = coverage_node.find('dcterms:period', namespaces=self.xml_ns)
+            value_node = period_node.find('rdf:value', namespaces=self.xml_ns)
+            match = self.re_period.match(value_node.text)
+            if match is not None:
+                period_start = dateutil.parser.parse(match.group('start'))
+                period_end = dateutil.parser.parse(match.group('end'))
+        except Exception as e:
+            print("Unable to find coverage data - encountered exception {}".format(e.message))
+        return period_start, period_end
 
     def deleteResource(self, resource_id, confirm=True):
         if self.auth is None:
             raise HydroShareUtilityException("Cannot modify resources without authentication")
         try:
-            resource_name = self.resource_cache[resource_id] if resource_id in self.resource_cache else resource_id
             if confirm:
-                user_input = raw_input('Are you sure you want to delete the resource {}? (y/N): '.format(resource_name))
+                user_input = raw_input('Are you sure you want to delete the resource {}? (y/N): '.format(resource_id))
                 if user_input.lower() != 'y':
                     return
-            print 'Deleting resource {}'.format(resource_name)
-            if resource_id in self.resource_cache:
-                self.resource_cache.pop(resource_id)
+            print 'Deleting resource {}'.format(resource_id)
             self.client.deleteResource(resource_id)
         except Exception as e:
             print 'Exception encountered while deleting resource {}: {}'.format(resource_id, e)
