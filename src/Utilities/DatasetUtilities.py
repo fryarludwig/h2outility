@@ -197,8 +197,10 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 base_name += '_{}'.format(year)
             file_name = base_name + '.csv'
 
+            stopwatch_timer = datetime.datetime.now()
             print 'Querying values for site {}, source {}, qc {}, year {} '.format(site.code, source.id, qc.code, year)
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
+            print 'Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer)
             if dataframe is not None:
                 dataframe.sort_index(inplace=True)
                 headers = BuildSeriesFileHeader(series_list, site, source)
@@ -230,6 +232,7 @@ def WriteSeriesToFile(csv_name, dataframe, headers):
         dataframe.to_csv(file_out)
         file_out.close()
     return True
+
 
 def GetSeriesYearRange(series_list):
     start_date = None

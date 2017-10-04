@@ -127,6 +127,12 @@ class H2OService:
                     self.ConnectToHydroShareAccount(resource.hs_account_name)
                     current_account_name = resource.hs_account_name
 
+                # resource_files = self.ActiveHydroshare.getResourceFileList(resource.resource_id)
+                # print 'Resource {} has {} files:'.format(resource.resource.title, len(resource_files))
+                # for res_file in resource_files:
+                #     print res_file
+                # continue
+
                 self._thread_checkpoint()
                 response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
                 if APP_SETTINGS.VERBOSE and APP_SETTINGS.H2O_DEBUG:
@@ -283,6 +289,7 @@ class H2OLogger:
         if len(message) > 0 and not message.isspace():
             self.terminal.write(self.prefix_date(message))
             self.LogFile.write(self.prefix_date(message))
+            self.LogFile.flush()
             if APP_SETTINGS.GUI_MODE and APP_SETTINGS.VERBOSE:
                 pub.sendMessage('logger', message='H2OService: ' + str(message))
 

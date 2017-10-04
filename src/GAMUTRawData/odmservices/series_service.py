@@ -386,27 +386,34 @@ class SeriesService():
 
     def get_values_by_filters(self, site_id, qc_id, source_id, method_ids, var_ids, year=None):
         try:
+            if qc_id != 0 or len(var_ids) == 1 or len(method_ids) == 1:
+                query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
+                                                       DataValue.utc_offset, DataValue.data_value,
+                                                       DataValue.qualifier_id, DataValue.censor_code, Variable.code)
+            else:
+                query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
+                                                       DataValue.utc_offset, DataValue.data_value, Variable.code)
+
             if year is None:
-                q = self._edit_session.query(DataValue, Variable.code).filter(DataValue.site_id == site_id,
-                                                                          DataValue.variable_id.in_(var_ids),
-                                                                          DataValue.variable_id == Variable.id,
-                                                                          DataValue.quality_control_level_id == qc_id,
-                                                                          DataValue.source_id == source_id,
-                                                                          DataValue.method_id.in_(method_ids))
+                q = query_items.filter(DataValue.site_id == site_id, DataValue.variable_id.in_(var_ids),
+                                       DataValue.variable_id == Variable.id,
+                                       DataValue.quality_control_level_id == qc_id, DataValue.source_id == source_id,
+                                       DataValue.method_id.in_(method_ids))
+
             else:
                 year_start = '{}-01-01 00:00:00'.format(year)
                 year_end = '{}-12-31 23:59:59'.format(year)
-                q = self._edit_session.query(DataValue, Variable.code).filter(DataValue.local_date_time.between(year_start, year_end),
-                                                               DataValue.site_id == site_id,
-                                                               DataValue.variable_id.in_(var_ids),
-                                                               DataValue.variable_id == Variable.id,
-                                                               DataValue.quality_control_level_id == qc_id,
-                                                               DataValue.source_id == source_id,
-                                                               DataValue.method_id.in_(method_ids))
+                q = query_items.filter(DataValue.local_date_time.between(year_start, year_end),
+                                       DataValue.site_id == site_id, DataValue.variable_id.in_(var_ids),
+                                       DataValue.variable_id == Variable.id,
+                                       DataValue.quality_control_level_id == qc_id, DataValue.source_id == source_id,
+                                       DataValue.method_id.in_(method_ids))
+
             query = q.statement.compile(dialect=self._session_factory.engine.dialect)
             result = None
             for chunk in pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params,
-                                               coerce_float=False, chunksize=100000):
+                                               coerce_float=True, chunksize=250000):
+                                               # coerce_float = False, chunksize = 250000):
                 if result is None:
                     result = chunk
                 else:
