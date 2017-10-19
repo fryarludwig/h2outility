@@ -17,6 +17,9 @@ class Common:
         """
         self.H2O_DEBUG = True if '--debug' in args else False
         self.VERBOSE = True if '--verbose' in args else False
+        self.TEST_H2O = True if '--test_h2o' in args else False
+        self.ALLOW_QUERIES = False if '--skip_queries' in args else True
+        self.ALLOW_HYDROSHARE = False if '--skip_hydroshare' in args else True
 
         """
         General constants and non-class variables
@@ -37,6 +40,9 @@ class Common:
         H2O-specific constants
         """
         self.CSV_COLUMNS = ["LocalDateTime", "UTCOffset", "DateTimeUTC"]
+        self.QUERY_CHUNK_SIZE = 250000 if not self.TEST_H2O else 10
+        self.MAX_QUERY_SIZE = None if not self.TEST_H2O else 10
+        self.QUERY_TIMEOUT = 60
 
         """
         Setup sys and other args

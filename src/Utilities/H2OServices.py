@@ -134,12 +134,14 @@ class H2OService:
                 # continue
 
                 self._thread_checkpoint()
-                response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
-                if APP_SETTINGS.VERBOSE and APP_SETTINGS.H2O_DEBUG:
-                    print response
+                if not APP_SETTINGS.ALLOW_HYDROSHARE:
+                    response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
+                    if APP_SETTINGS.VERBOSE and APP_SETTINGS.H2O_DEBUG:
+                        print response
                 self._thread_checkpoint()
                 # self.ActiveHydroshare.deleteFilesInResource(resource.resource_id)
-                self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
+                if not APP_SETTINGS.ALLOW_HYDROSHARE:
+                    self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
                 # self.ActiveHydroshare.setResourcesAsPublic([resource.resource_id])
                 resource_names.append(resource.resource.title)
                 current_dataset += 1

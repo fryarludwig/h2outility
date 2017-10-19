@@ -75,11 +75,18 @@ class OdmSeriesHelper:
         'Source': lambda first_series, second_series: first_series.SourceID == second_series.SourceID,
         'Method': lambda first_series, second_series: first_series.MethodID == second_series.MethodID
     }
-    FORMAT_STRING = '{:<22} {:<27} QC {:<7} {:<5} {}'
+    FORMAT_STRING = 'Series<{}; {}; QC {}; {}; {}>'
 
     @staticmethod
     def SeriesToString(series):
         format_string = OdmSeriesHelper.FORMAT_STRING
+        if isinstance(series, list):
+            series_string = 'list['
+            for i in range(0, len(series)):
+                series_string += OdmSeriesHelper.SeriesToString(series[i])
+                if i < len(series) - 1:
+                    series_string += ',\n'
+            return series_string + ']'
         if isinstance(series, H2OSeries):
             return format_string.format(series.SiteCode, series.VariableCode, series.QualityControlLevelCode,
                                            series.SourceID, series.MethodID)
@@ -133,16 +140,22 @@ class OdmSeriesHelper:
         :type resource: H2OManagedResource
         :returns list[list[H2OSeries]]
         """
-        chunks = {}
+        if APP_SETTINGS.VERBOSE:
+            print 'Determining chunking for resource {}'.format(resource)
         if resource.single_file:  # If we should group into the fewest possible files
+            chunk_dict = {}
             for series in resource.selected_series.itervalues():
                 series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)
-                if series_tuple not in chunks.keys():
-                    chunks[series_tuple] = []
-                chunks[series_tuple].append(series)
-            return chunks.values()
+                if series_tuple not in chunk_dict.keys():
+                    chunk_dict[series_tuple] = []
+                chunk_dict[series_tuple].append(series)
+            chunk_list = chunk_dict.values()
         else:  # If we should group each into its own file
-            return [[series] for series in resource.selected_series.itervalues()]
+            chunk_list = [[series] for series in resource.selected_series.itervalues()]
+        if APP_SETTINGS.VERBOSE:
+            for chunk in chunk_list:
+                print 'Chunk: {}'.format(OdmSeriesHelper.SeriesToString(chunk))
+        return chunk_list
 
     @staticmethod
     def createFile(filepath):

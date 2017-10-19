@@ -133,10 +133,15 @@ def createFile(filepath):
         print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
         return None
 
-
 def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, year=None):
     csv_table = None
-    dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, variables, year)
+    if not APP_SETTINGS.ALLOW_QUERIES:
+        dataframe = None
+    else:
+        dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, variables, year,
+                                                         max_values=APP_SETTINGS.MAX_QUERY_SIZE,
+                                                         chunk_size=APP_SETTINGS.QUERY_CHUNK_SIZE,
+                                                         timeout=APP_SETTINGS.QUERY_TIMEOUT)
     if dataframe is None:
         pass
     elif len(dataframe) == 0:
@@ -209,6 +214,10 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 else:
                     print 'Unable to write series to file {}'.format(file_name)
                     failed_files.append((file_name, 'Unable to write series to file'))
+            elif not APP_SETTINGS.ALLOW_QUERIES:
+                headers = BuildSeriesFileHeader(series_list, site, source)
+                if WriteSeriesToFile(file_name, dataframe, headers):
+                    return file_name
             else:
                 print 'No data values exist for this dataset'
                 failed_files.append((file_name, 'No data values found for file'))
@@ -218,9 +227,12 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
 
 
 def WriteSeriesToFile(csv_name, dataframe, headers):
-    if dataframe is None:
+    if dataframe is None and APP_SETTINGS.ALLOW_QUERIES:
         print('No dataframe is available to write to file {}'.format(csv_name))
         return False
+    elif dataframe is None and not APP_SETTINGS.ALLOW_QUERIES:
+        print('Writing test datasets to file: {}'.format(csv_name))
+        return True
     file_out = createFile(csv_name)
     if file_out is None:
         print('Unable to create output file {}'.format(csv_name))

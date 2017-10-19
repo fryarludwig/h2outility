@@ -161,9 +161,9 @@ class WxHelper:
             """
             menu = wx.Menu()
             WxHelper.AddNewMenuItem(self, menu, 'Select All', on_click=partial(self._category_selection,
-                                                                         command='All', row=event.GetRow()))
+                                                                               command='All', row=event.GetRow()))
             WxHelper.AddNewMenuItem(self, menu, 'Deselect All', on_click=partial(self._category_selection,
-                                                                           command='None', row=event.GetRow()))
+                                                                                 command='None', row=event.GetRow()))
             for text in WxHelper.SeriesGrid.SERIES_COL.iterkeys():
                 select = text + ': Select All'
                 deselect = text + ': Deselect All'

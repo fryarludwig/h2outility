@@ -384,7 +384,8 @@ class SeriesService():
             print 'Unexpected error encountered during query\nType: {}\nError: {}\n\n'.format(type(e), e)
             print e
 
-    def get_values_by_filters(self, site_id, qc_id, source_id, method_ids, var_ids, year=None):
+    def get_values_by_filters(self, site_id, qc_id, source_id, method_ids, var_ids, year=None, max_values=None,
+                              chunk_size=250000, timeout=None):
         try:
             if qc_id != 0 or len(var_ids) == 1 or len(method_ids) == 1:
                 query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
@@ -412,8 +413,7 @@ class SeriesService():
             query = q.statement.compile(dialect=self._session_factory.engine.dialect)
             result = None
             for chunk in pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params,
-                                               coerce_float=True, chunksize=250000):
-                                               # coerce_float = False, chunksize = 250000):
+                                               coerce_float=True, chunksize=chunk_size):
                 if result is None:
                     result = chunk
                 else:
