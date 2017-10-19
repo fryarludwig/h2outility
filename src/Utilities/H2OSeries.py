@@ -1,26 +1,9 @@
-import datetime
-import os
-import re
-import smtplib
-import sys
-import json
-from pubsub import pub
-import time
-import wx
-import pandas
-
-from threading import Thread
-from exceptions import IOError
-
-from GAMUTRawData.odmservices import ServiceManager
 from GAMUTRawData.odmdata import Series
 from Utilities.DatasetUtilities import H2OManagedResource
-from HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate
-
-from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException
 from Common import *
 
 __title__ = 'H2OSeries'
+
 
 class H2OSeries:
     def __init__(self, SeriesID=None, SiteID=None, SiteCode=None, VariableID=None, VariableCode=None, MethodID=None,
@@ -33,7 +16,8 @@ class H2OSeries:
         self.MethodID = MethodID if MethodID is not None else -1  # type: int
         self.SourceID = SourceID if SourceID is not None else -1  # type: int
         self.QualityControlLevelID = QualityControlLevelID if QualityControlLevelID is not None else -1  # type: int
-        self.QualityControlLevelCode = QualityControlLevelCode if QualityControlLevelCode is not None else -1  # type: float
+        self.QualityControlLevelCode = QualityControlLevelCode if QualityControlLevelCode is not None else -1  #
+        # type: float
 
     def __hash__(self):
         return hash((self.SiteCode, self.VariableCode, self.MethodID, self.SourceID, self.QualityControlLevelCode))
@@ -89,12 +73,11 @@ class OdmSeriesHelper:
             return series_string + ']'
         if isinstance(series, H2OSeries):
             return format_string.format(series.SiteCode, series.VariableCode, series.QualityControlLevelCode,
-                                           series.SourceID, series.MethodID)
+                                        series.SourceID, series.MethodID)
         elif isinstance(series, Series):
             return format_string.format(series.site_code, series.variable_code, series.quality_control_level_code,
                                         series.source_id, series.method_id)
         return 'Unable to create string from object type {}'.format(type(series))
-
 
     @staticmethod
     def OdmSeriesToString(series):
@@ -115,16 +98,6 @@ class OdmSeriesHelper:
                              MethodID=series.method_id, SourceID=series.source_id, VariableCode=series.variable_code,
                              QualityControlLevelID=series.quality_control_level_id, SiteCode=series.site_code,
                              QualityControlLevelCode=series.quality_control_level_code)
-
-    @staticmethod
-    def GetOdmSeriesFromH2OSeries(series_service, h2o_series):
-        try:
-            return series_service.get_series_from_filter(h2o_series.SiteID, h2o_series.VariableID,
-                                                         h2o_series.QualityControlLevelID, h2o_series.SourceID,
-                                                         h2o_series.MethodID)
-        except Exception as e:
-            print 'Error while attempting to fetch ODM series: {}'.format(e)
-            return None
 
     @staticmethod
     def HashOdmSeriesObject(series):

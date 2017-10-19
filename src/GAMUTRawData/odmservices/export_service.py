@@ -26,12 +26,7 @@ class ExportService():
 
 
     def write_data_row(self, writer, series, dv, utc, site, var, offset, qual, src, qcl):
-        data = []
-        data.append(series.id)
-        data.append(dv.id)
-        data.append(dv.data_value)
-        data.append(dv.value_accuracy)
-        data.append(dv.local_date_time)
+        data = [series.id, dv.id, dv.data_value, dv.value_accuracy, dv.local_date_time]
         if utc:
             data.append(dv.utc_offset)
             data.append(dv.date_time_utc)
@@ -82,12 +77,7 @@ class ExportService():
 
     def write_data_header(self, writer, utc, site, var, offset, qual, src, qcl):
         # Build header list
-        header = []
-        header.append("SeriesId")
-        header.append("ValueId")
-        header.append("DataValue")
-        header.append("ValueAccuracy")
-        header.append("LocalDateTime")
+        header = ["SeriesId", "ValueId", "DataValue", "ValueAccuracy", "LocalDateTime"]
         if utc:
             header.append("UTCOffset")
             header.append("DateTimeUTC")

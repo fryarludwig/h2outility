@@ -29,6 +29,7 @@ time_format = '%Y-%m-%d'
 formatString = '%s  %s: %s'
 service_manager = ServiceManager()
 
+
 class FileDetails(object):
     def __init__(self, site_code="", site_name="", file_path="", file_name="", variable_names=None):
         self.coverage_start = None
@@ -45,11 +46,12 @@ class FileDetails(object):
         fd_str = '{site} - {s_name} - {f_name}'
         return fd_str.format(site=self.site_code, s_name=self.site_name, f_name=self.file_name)
 
+
 class H2OManagedResource:
     def __init__(self, resource=None, odm_series=None, resource_id='', hs_account_name='', odm_db_name='',
                  single_file=False, chunk_years=False, associated_files=None):
         self.resource_id = resource_id  # type: str
-        self.resource = resource   # type: HydroShareResource
+        self.resource = resource  # type: HydroShareResource
         self.selected_series = odm_series if odm_series is not None else {}  # type: dict[int, H2OSeries]
         self.hs_account_name = hs_account_name  # type: str
         self.odm_db_name = odm_db_name  # type: str
@@ -68,6 +70,7 @@ class H2OManagedResource:
             return 'Managed resource {} with {} series'.format(self.resource.title, len(self.selected_series))
         else:
             return 'Managed resource with ID {} and {} series'.format(self.resource_id, len(self.selected_series))
+
 
 def _OdmDatabaseConnectionTestTimed(queue):
     db_auth = queue.get(True)
@@ -121,7 +124,6 @@ class OdmDatasetConnection:
                 'db': self.database, 'port': self.port}
 
 
-# HEADER_LINE = '# '
 DELIMITER = '# {}'.format('-' * 90)
 
 
@@ -133,9 +135,10 @@ def createFile(filepath):
         print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
         return None
 
+
 def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, year=None):
     csv_table = None
-    if not APP_SETTINGS.ALLOW_QUERIES:
+    if APP_SETTINGS.SKIP_QUERIES:
         dataframe = None
     else:
         dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, variables, year,
@@ -188,9 +191,9 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
         elif len(variables) == 0 or len(methods) == 0:
             print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
         else:
-            site = series_list[0].site                  # type: Site
-            source = series_list[0].source              # type: Source
-            qc = series_list[0].quality_control_level   # type: QualityControlLevel
+            site = series_list[0].site  # type: Site
+            source = series_list[0].source  # type: Source
+            qc = series_list[0].quality_control_level  # type: QualityControlLevel
             variables = list(variables)
             methods = list(methods)
 
@@ -202,10 +205,13 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 base_name += '_{}'.format(year)
             file_name = base_name + '.csv'
 
-            stopwatch_timer = datetime.datetime.now()
-            print 'Querying values for site {}, source {}, qc {}, year {} '.format(site.code, source.id, qc.code, year)
-            dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, year)
-            print 'Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer)
+            if APP_SETTINGS.VERBOSE:
+                stopwatch_timer = datetime.datetime.now()
+                print 'Querying values for file {}'.format(file_name)
+            dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods,
+                                               variables, year)
+            if APP_SETTINGS.VERBOSE:
+                print 'Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer)
             if dataframe is not None:
                 dataframe.sort_index(inplace=True)
                 headers = BuildSeriesFileHeader(series_list, site, source)
@@ -214,7 +220,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 else:
                     print 'Unable to write series to file {}'.format(file_name)
                     failed_files.append((file_name, 'Unable to write series to file'))
-            elif not APP_SETTINGS.ALLOW_QUERIES:
+            elif APP_SETTINGS.SKIP_QUERIES:
                 headers = BuildSeriesFileHeader(series_list, site, source)
                 if WriteSeriesToFile(file_name, dataframe, headers):
                     return file_name
@@ -227,10 +233,10 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
 
 
 def WriteSeriesToFile(csv_name, dataframe, headers):
-    if dataframe is None and APP_SETTINGS.ALLOW_QUERIES:
+    if dataframe is None and not APP_SETTINGS.SKIP_QUERIES:
         print('No dataframe is available to write to file {}'.format(csv_name))
         return False
-    elif dataframe is None and not APP_SETTINGS.ALLOW_QUERIES:
+    elif dataframe is None and APP_SETTINGS.SKIP_QUERIES:
         print('Writing test datasets to file: {}'.format(csv_name))
         return True
     file_out = createFile(csv_name)

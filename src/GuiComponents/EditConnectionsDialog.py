@@ -241,7 +241,6 @@ class DatabaseConnectionDialog(wx.Dialog):
 
         pub.sendMessage("db_auth_save", result=details)
 
-
     def on_selection_changed(self, event=None):
         value = self.connection_selector_combo.GetStringSelection()
         if value in self.connections:

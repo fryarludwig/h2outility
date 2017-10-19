@@ -545,7 +545,7 @@ class VisualH2OWindow(wx.Frame):
             self.status_gauge.SetValue(0)
         self.OnPrintLog(state + message)
 
-    def GetLabel(self, label, font=None):
+    def CreateLabel(self, label, font=None):
         return WxHelper.GetLabel(self.panel, label, font)
 
     def _build_main_window(self):
@@ -567,7 +567,7 @@ class VisualH2OWindow(wx.Frame):
                                                             on_change=self.on_hydroshare_account_chosen, size_x=310, size_y=23,
                                                             font=self.MONOSPACE)
 
-        hs_account_sizer.Add(self.GetLabel(u'Select a HydroShare account to continue'), pos=(0, 0), span=(1, 4),
+        hs_account_sizer.Add(self.CreateLabel(u'Select a HydroShare account to continue'), pos=(0, 0), span=(1, 4),
                              flag=ALIGN.LEFT)
         hs_account_sizer.Add(self.hydroshare_account_choice, pos=(1, 0), span=(1, 4), flag=ALIGN.LEFT)
         hs_account_sizer.Add(edit_hydroshare_button, pos=(1, 4), span=(1, 1), flag=ALIGN.LEFT)
@@ -601,26 +601,26 @@ class VisualH2OWindow(wx.Frame):
         flags = ALIGN.CENTER
         text_flags = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
 
-        resource_sizer.Add(self.GetLabel(u'Select a resource'), pos=(0, 0), span=(1, 1), flag=ALIGN.CENTER)
+        resource_sizer.Add(self.CreateLabel(u'Select a resource'), pos=(0, 0), span=(1, 1), flag=ALIGN.CENTER)
         resource_sizer.Add(self.invert_resource_choices_checkbox, pos=(0, 6), span=(1, 2), flag=text_flags)
         resource_sizer.Add(self.hs_resource_choice, pos=(1, 0), span=(1, 8), flag=ALIGN.CENTER)
 
-        resource_sizer.Add(self.GetLabel(u'Resource Title'), pos=(2, 0), span=(1, 1))
-        resource_sizer.Add(self.GetLabel(u'Resource Abstract'), pos=(4, 0), span=(1, 1))
+        resource_sizer.Add(self.CreateLabel(u'Resource Title'), pos=(2, 0), span=(1, 1))
+        resource_sizer.Add(self.CreateLabel(u'Resource Abstract'), pos=(4, 0), span=(1, 1))
         resource_sizer.Add(self.resource_title_input, pos=(3, 0), span=(1, 8), flag=ALIGN.LEFT)
         resource_sizer.Add(self.resource_abstract_input, pos=(row_base, 0), span=(4, 4), flag=ALIGN.CENTER | PADDING.ALL)
 
-        resource_sizer.Add(self.GetLabel(u'Funding Agency'), pos=(row_base, col_base), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.GetLabel(u'Agency Website'), pos=(row_base + 1, col_base), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.GetLabel(u'Award Title'), pos=(row_base + 2, col_base), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.GetLabel(u'Award Number'), pos=(row_base + 3, col_base), span=(1, 1), flag=text_flags)
+        resource_sizer.Add(self.CreateLabel(u'Funding Agency'), pos=(row_base, col_base), span=(1, 1), flag=text_flags)
+        resource_sizer.Add(self.CreateLabel(u'Agency Website'), pos=(row_base + 1, col_base), span=(1, 1), flag=text_flags)
+        resource_sizer.Add(self.CreateLabel(u'Award Title'), pos=(row_base + 2, col_base), span=(1, 1), flag=text_flags)
+        resource_sizer.Add(self.CreateLabel(u'Award Number'), pos=(row_base + 3, col_base), span=(1, 1), flag=text_flags)
         resource_sizer.Add(self.resource_funding_agency_input, pos=(row_base, col_base + 1), span=(1, 3), flag=flags)
         resource_sizer.Add(self.resource_agency_website_input, pos=(row_base + 1, col_base + 1), span=(1, 3),
                            flag=flags)
         resource_sizer.Add(self.resource_award_title_input, pos=(row_base + 2, col_base + 1), span=(1, 3), flag=flags)
         resource_sizer.Add(self.resource_award_number_input, pos=(row_base + 3, col_base + 1), span=(1, 3), flag=flags)
 
-        resource_sizer.Add(self.GetLabel(u'Resource Management:'), pos=(row_base + 4, 4), span=(1, 1), flag=text_flags)
+        resource_sizer.Add(self.CreateLabel(u'Resource Management:'), pos=(row_base + 4, 4), span=(1, 1), flag=text_flags)
         resource_sizer.Add(self.save_dataset_button, pos=(row_base + 4, 7), span=(1, 1), flag=wx.ALIGN_CENTER)
         resource_sizer.Add(self.clear_dataset_button, pos=(row_base + 4, 6), span=(1, 1), flag=wx.ALIGN_CENTER)
         resource_sizer.Add(self.remove_files_button, pos=(row_base + 4, 5), span=(1, 1), flag=wx.ALIGN_CENTER)
@@ -650,7 +650,7 @@ class VisualH2OWindow(wx.Frame):
         edit_database_button = WxHelper.GetButton(self, self.panel, u'Edit...', on_click=self.on_edit_database)
         self.database_connection_choice = WxHelper.GetChoice(self, self.panel, self._get_database_choices(),
                                                              on_change=self.on_database_chosen, font=self.MONOSPACE)
-        odm_series_sizer.Add(self.GetLabel(u'Select a database connection'), pos=(row, 0), span=(1, span),
+        odm_series_sizer.Add(self.CreateLabel(u'Select a database connection'), pos=(row, 0), span=(1, span),
                              flag=wx.ALIGN_LEFT)
         odm_series_sizer.Add(self.database_connection_choice, pos=(row + 1, 0), span=(1, span), flag=ALIGN.LEFT)
         odm_series_sizer.Add(edit_database_button, pos=(row + 1, span), span=(1, 1))
@@ -659,15 +659,15 @@ class VisualH2OWindow(wx.Frame):
         text_flags = wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL
         self.chunk_by_year_checkbox = WxHelper.GetCheckBox(self, self.panel, u'Chunk files by year')
         self.chunk_by_series_checkbox = WxHelper.GetCheckBox(self, self.panel, u'One series per file')
-        odm_series_sizer.Add(self.GetLabel(u'File options:    '), pos=(row + 1, 6), span=(1, 1), flag=text_flags)
+        odm_series_sizer.Add(self.CreateLabel(u'File options:    '), pos=(row + 1, 6), span=(1, 1), flag=text_flags)
         odm_series_sizer.Add(self.chunk_by_series_checkbox, pos=(row + 1, 7), span=(1, 1), flag=text_flags)
         odm_series_sizer.Add(self.chunk_by_year_checkbox, pos=(row + 1, 8), span=(1, 1), flag=text_flags)
 
         # Series selection controls
         bold_font = wx.Font(11, wx.DEFAULT, wx.NORMAL, wx.NORMAL)
-        odm_series_sizer.Add(self.GetLabel(u'Available Series', font=bold_font), pos=(row + 2, 0), span=(1, 4),
+        odm_series_sizer.Add(self.CreateLabel(u'Available Series', font=bold_font), pos=(row + 2, 0), span=(1, 4),
                              flag=wx.ALIGN_CENTER)
-        odm_series_sizer.Add(self.GetLabel(u'Selected Series', font=bold_font), pos=(row + 2, 5), span=(1, 4),
+        odm_series_sizer.Add(self.CreateLabel(u'Selected Series', font=bold_font), pos=(row + 2, 5), span=(1, 4),
                              flag=wx.ALIGN_CENTER)
 
         grid_x_size = 500

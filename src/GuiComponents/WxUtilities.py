@@ -35,13 +35,11 @@ class WxHelper:
             'Method': 6
         }
 
-        def __init__(self, app, parent, font=wx.SMALL_FONT, size=None, max_size=wx.DefaultSize, min_size=wx.DefaultSize):
+        def __init__(self, app, parent, font=wx.SMALL_FONT, size=None):
             wx.grid.Grid.__init__(self, parent, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.SIMPLE_BORDER)
             if size is not None:
                 self.CacheBestSize(size)
                 self.SetSizeHints(size)
-                # self.SetMaxSize(max_size)
-                # self.SetMinSize(min_size)
 
             self.CreateGrid(0, len(WxHelper.SeriesGrid.LABELS))
             self.EnableEditing(False)

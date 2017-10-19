@@ -32,13 +32,8 @@ class ServiceManager():
                 line = line.split()
 
                 if len(line) >= 6:
-                    line_dict = {}
-                    line_dict['engine'] = line[0]
-                    line_dict['user'] = line[1]
-                    line_dict['password'] = line[2]
-                    line_dict['address'] = line[3]
-                    line_dict['port'] = line[4]
-                    line_dict['db'] = line[5]
+                    line_dict = {'engine': line[0], 'user': line[1], 'password': line[2], 'address': line[3],
+                                 'port': line[4], 'db': line[5]}
                     self._connections.append(line_dict)
 
         if len(self._connections) is not 0:

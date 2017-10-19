@@ -18,8 +18,10 @@ class Common:
         self.H2O_DEBUG = True if '--debug' in args else False
         self.VERBOSE = True if '--verbose' in args else False
         self.TEST_H2O = True if '--test_h2o' in args else False
-        self.ALLOW_QUERIES = False if '--skip_queries' in args else True
-        self.ALLOW_HYDROSHARE = False if '--skip_hydroshare' in args else True
+        self.DELETE_RESOURCE_FILES = True if '--delete_existing_resource_files' in args else False
+        self.SET_RESOURCES_PUBLIC = True if '--make_resources_public' in args else False
+        self.SKIP_QUERIES = True if '--skip_queries' in args else False
+        self.SKIP_HYDROSHARE = True if '--skip_hydroshare' in args else False
 
         """
         General constants and non-class variables
