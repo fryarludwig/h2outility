@@ -136,15 +136,16 @@ def createFile(filepath):
         return None
 
 
-def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, year=None):
+def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, starting_date,
+                           year=None):
     csv_table = None
     if APP_SETTINGS.SKIP_QUERIES:
         dataframe = None
     else:
         dataframe = series_service.get_values_by_filters(site_id, qc_id, source_id, methods, variables, year,
-                                                         max_values=APP_SETTINGS.MAX_QUERY_SIZE,
+                                                         starting_date=starting_date,
                                                          chunk_size=APP_SETTINGS.QUERY_CHUNK_SIZE,
-                                                         timeout=APP_SETTINGS.QUERY_TIMEOUT)
+                                                         timeout=APP_SETTINGS.DATAVALUES_TIMEOUT)
     if dataframe is None:
         pass
     elif len(dataframe) == 0:
@@ -205,31 +206,65 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 base_name += '_{}'.format(year)
             file_name = base_name + '.csv'
 
+            if os.path.exists(file_name):
+                csv_data = parseCSVData(file_name)
+                csv_end_datetime = csv_data.localDateTime
+            else:
+                csv_end_datetime = None
+
             if APP_SETTINGS.VERBOSE:
                 stopwatch_timer = datetime.datetime.now()
                 print 'Querying values for file {}'.format(file_name)
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods,
-                                               variables, year)
+                                               variables, csv_end_datetime, year)
             if APP_SETTINGS.VERBOSE:
                 print 'Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer)
             if dataframe is not None:
-                dataframe.sort_index(inplace=True)
-                headers = BuildSeriesFileHeader(series_list, site, source)
-                if WriteSeriesToFile(file_name, dataframe, headers):
-                    return file_name
+                if csv_end_datetime is None:
+                    dataframe.sort_index(inplace=True)
+                    headers = BuildSeriesFileHeader(series_list, site, source)
+                    if WriteSeriesToFile(file_name, dataframe, headers):
+                        return file_name
+                    else:
+                        print 'Unable to write series to file {}'.format(file_name)
+                        failed_files.append((file_name, 'Unable to write series to file'))
                 else:
-                    print 'Unable to write series to file {}'.format(file_name)
-                    failed_files.append((file_name, 'Unable to write series to file'))
+                    if AppendSeriesToFile(file_name, dataframe):
+                        return file_name
+                    else:
+                        print 'Unable to append series to file {}'.format(file_name)
+                        failed_files.append((file_name, 'Unable to append series to file'))
             elif APP_SETTINGS.SKIP_QUERIES:
                 headers = BuildSeriesFileHeader(series_list, site, source)
                 if WriteSeriesToFile(file_name, dataframe, headers):
                     return file_name
+            elif dataframe is None and csv_end_datetime is not None:
+                print 'File exists but there are no new data values to write'
+                return file_name
             else:
                 print 'No data values exist for this dataset'
                 failed_files.append((file_name, 'No data values found for file'))
     except TypeError as e:
         print 'Exception encountered while building a csv file: {}'.format(e)
     return None
+
+
+def AppendSeriesToFile(csv_name, dataframe):
+    if dataframe is None and not APP_SETTINGS.SKIP_QUERIES:
+        print('No dataframe is available to write to file {}'.format(csv_name))
+        return False
+    elif dataframe is None and APP_SETTINGS.SKIP_QUERIES:
+        print('Writing test datasets to file: {}'.format(csv_name))
+        return True
+    try:
+        file_out = open(csv_name, 'a')
+        print('Writing datasets to file: {}'.format(csv_name))
+        dataframe.to_csv(file_out, header=None)
+        file_out.close()
+    except Exception as e:
+        print('---\nIssue encountered while appending to file: \n{}\n{}\n---'.format(e, e.message))
+        return False
+    return True
 
 
 def WriteSeriesToFile(csv_name, dataframe, headers):
@@ -309,6 +344,43 @@ def generateSiteInformation(site):
     file_str += "# SiteType: " + str(site.type) + "\n"
     file_str += "#\n"
     return file_str
+
+
+def parseCSVData(filePath):
+    csvFile = open(filePath, "r")
+    lastLine = getLastLine(csvFile)
+    csvFile.close()
+    return getDateAndNumCols(lastLine)
+
+
+def getLastLine(targetFile):
+    firstCharSeek = ''
+    readPosition = -3
+    prevLine = result = ""
+    while firstCharSeek != '\n':
+        targetFile.seek(readPosition, os.SEEK_END)
+        readPosition -= 1
+        result = prevLine #last line was being deleted. So I saved a temp to keep it
+        prevLine = targetFile.readline()
+        firstCharSeek = prevLine[0]
+    return result
+
+
+def getDateAndNumCols(lastLine):
+    strList = lastLine.split(",")
+    dateTime = datetime.datetime.strptime(strList[0], '%Y-%m-%d %H:%M:%S')
+    count = 0
+    for value in strList:
+        isValueCorrect = strList.index(value) > 2 and value != " \n"
+        if isValueCorrect:
+            count += 1
+    return ReturnValue(dateTime, count)
+
+
+class ReturnValue:
+    def __init__(self, dateTime, noOfVars):
+        self.localDateTime = dateTime
+        self.numCols = noOfVars
 
 
 class SourceInfo:

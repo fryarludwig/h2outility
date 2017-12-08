@@ -43,8 +43,8 @@ class Common:
         """
         self.CSV_COLUMNS = ["LocalDateTime", "UTCOffset", "DateTimeUTC"]
         self.QUERY_CHUNK_SIZE = 250000 if not self.TEST_H2O else 10
-        self.MAX_QUERY_SIZE = None if not self.TEST_H2O else 10
-        self.QUERY_TIMEOUT = 60
+        self.DATAVALUES_TIMEOUT = 6
+        self.SERIES_TIMEOUT = 5
 
         """
         Setup sys and other args

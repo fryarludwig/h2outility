@@ -14,9 +14,16 @@ from GAMUTRawData.odmdata import Sample
 from GAMUTRawData.odmdata import Method
 from GAMUTRawData.odmdata import QualityControlLevel
 from GAMUTRawData.odmdata import ODMVersion
+from Common import APP_SETTINGS
 import pandas
+import threading
 
 logger = logging.getLogger('main')
+
+
+class TimeoutException(Exception):
+    def __init__(self, args):
+        super(TimeoutException, self).__init__(args)
 
 
 class SeriesService():
@@ -384,8 +391,8 @@ class SeriesService():
             print 'Unexpected error encountered during query\nType: {}\nError: {}\n\n'.format(type(e), e)
             print e
 
-    def get_values_by_filters(self, site_id, qc_id, source_id, method_ids, var_ids, year=None, max_values=None,
-                              chunk_size=250000, timeout=None):
+    def get_values_by_filters(self, site_id, qc_id, source_id, method_ids, var_ids, year=None, starting_date=None,
+                              chunk_size=250000, timeout=100000, is_retry=False):
         try:
             if qc_id != 0 or len(var_ids) == 1 or len(method_ids) == 1:
                 query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
@@ -395,13 +402,13 @@ class SeriesService():
                 query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
                                                        DataValue.utc_offset, DataValue.data_value, Variable.code)
 
-            if year is None:
+            if year is None and starting_date is None:
                 q = query_items.filter(DataValue.site_id == site_id, DataValue.variable_id.in_(var_ids),
                                        DataValue.variable_id == Variable.id,
                                        DataValue.quality_control_level_id == qc_id, DataValue.source_id == source_id,
                                        DataValue.method_id.in_(method_ids))
 
-            else:
+            elif year is not None and starting_date is None:
                 year_start = '{}-01-01 00:00:00'.format(year)
                 year_end = '{}-12-31 23:59:59'.format(year)
                 q = query_items.filter(DataValue.local_date_time.between(year_start, year_end),
@@ -410,17 +417,42 @@ class SeriesService():
                                        DataValue.quality_control_level_id == qc_id, DataValue.source_id == source_id,
                                        DataValue.method_id.in_(method_ids))
 
+            elif year is None and starting_date is not None:
+                q = query_items.filter(DataValue.site_id == site_id, DataValue.variable_id.in_(var_ids),
+                                       DataValue.variable_id == Variable.id,
+                                       DataValue.quality_control_level_id == qc_id, DataValue.source_id == source_id,
+                                       DataValue.method_id.in_(method_ids),
+                                       DataValue.local_date_time > starting_date)
+
+            else:
+                year_start = '{}-01-01 00:00:00'.format(year)
+                year_end = '{}-12-31 23:59:59'.format(year)
+                q = query_items.filter(DataValue.local_date_time.between(year_start, year_end),
+                                       DataValue.site_id == site_id, DataValue.variable_id.in_(var_ids),
+                                       DataValue.variable_id == Variable.id,
+                                       DataValue.quality_control_level_id == qc_id, DataValue.source_id == source_id,
+                                       DataValue.method_id.in_(method_ids),
+                                       DataValue.local_date_time > starting_date)
+
             query = q.statement.compile(dialect=self._session_factory.engine.dialect)
+            query_timer = threading.Timer(timeout, self.raise_timeout_exception)
+            query_timer.start()
             result = None
             for chunk in pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params,
                                                coerce_float=True, chunksize=chunk_size):
-                if result is None:
-                    result = chunk
-                else:
-                    result = pandas.concat([result, chunk], copy=False)
+                result = chunk if result is None else pandas.concat([result, chunk], copy=False)
+            query_timer.cancel()
             return result
         except MemoryError as e:
             print 'Memory Error encountered during query!!\nError: {}\n'.format(type(e), e)
+        except TimeoutException as e:
+            print 'Timeout: {}'.format(e)
+            if is_retry:
+                return None
+            else:
+                print 'First query timed out - retrying'
+                return self.get_values_by_filters(site_id, qc_id, source_id, method_ids, var_ids, year=year,
+                                                  chunk_size=chunk_size, timeout=timeout, is_retry=True)
         except Exception as e:
             print 'Unexpected error encountered during query\nType: {}\nError: {}\n\n'.format(type(e), e)
             print e
@@ -468,22 +500,17 @@ class SeriesService():
         except:
             return None
 
+    def raise_timeout_exception(self):
+        pass
+
     def get_series_from_filter(self, site_id, variable_id, qc_level_id, source_id, method_id):
         try:
-            # q = self._edit_session.query(Series).filter(Series.site_id == site_id,
-            #                                             Series.variable_id == variable_id,
-            #                                             Series.quality_control_level_id == qc_level_id,
-            #                                             Series.source_id == source_id,
-            #                                             Series.method_id == method_id)
-
-            return self._edit_session.query(Series).filter(Series.site_id == site_id,
-                                                        Series.variable_id == variable_id,
-                                                        Series.quality_control_level_id == qc_level_id,
-                                                        Series.source_id == source_id,
-                                                        Series.method_id == method_id).first()
-            # query = q.statement.compile(dialect=self._session_factory.engine.dialect)
-            # return pandas.read_sql_query(sql=query, con=self._session_factory.engine, params=query.params,
-            #                              coerce_float=False)
+            query_result = self._edit_session.query(Series).filter(Series.site_id == site_id,
+                                                                   Series.variable_id == variable_id,
+                                                                   Series.quality_control_level_id == qc_level_id,
+                                                                   Series.source_id == source_id,
+                                                                   Series.method_id == method_id).first()
+            return query_result
         except Exception as e:
             print e
             return []
