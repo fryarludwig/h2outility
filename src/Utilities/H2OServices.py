@@ -1,24 +1,17 @@
 import datetime
-import os
-import re
-import smtplib
-import sys
-import json
+from exceptions import IOError
+from threading import Thread
 
 import jsonpickle
-
-from pubsub import pub
-from threading import Thread
-from exceptions import IOError
+import sys
+from wx.lib.pubsub import pub
+# from pubsub import pub
 
 from GAMUTRawData.odmservices import ServiceManager
-from GAMUTRawData.odmdata import Series
-from Utilities.DatasetUtilities import FileDetails, H2OManagedResource, OdmDatasetConnection, BuildCsvFile, \
-    GetSeriesYearRange
-from Utilities.HydroShareUtility import HydroShareUtility, HydroShareException, HydroShareUtilityException, \
-    HydroShareAccountDetails, ResourceTemplate
-from H2OSeries import H2OSeries, OdmSeriesHelper
-from Common import *
+from H2OSeries import OdmSeriesHelper
+from Common import APP_SETTINGS, InitializeDirectories
+from Utilities.DatasetUtilities import BuildCsvFile, GetSeriesYearRange, H2OManagedResource, OdmDatasetConnection
+from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate
 
 __title__ = 'H2O Service'
 
@@ -58,6 +51,47 @@ class H2OService:
         self.csv_indexes = ["LocalDateTime", "UTCOffset", "DateTimeUTC"]
         self.qualifier_columns = ["QualifierID", "QualifierCode", "QualifierDescription"]
         self.csv_columns = ["DataValue", "LocalDateTime", "UTCOffset", "DateTimeUTC"]
+
+    def RunTests(self):
+        dataset_count = len(self.ManagedResources)
+        current_dataset = 0
+        current_account_name = 'None'
+        resource_names = []
+        hs_account = None  # type: HydroShareAccount
+        for resource in self.ManagedResources.values():
+            if APP_SETTINGS.SKIP_HYDROSHARE:
+                continue
+            print 'Uploading files to resource {}'.format(resource.resource.title)
+            try:
+                if hs_account is None or hs_account.name != resource.hs_account_name:
+                    print 'Connecting to HydroShare account {}'.format(resource.hs_account_name)
+                    try:
+                        account = self.HydroShareConnections[resource.hs_account_name]
+                        self.ActiveHydroshare = HydroShareUtility()
+                        if self.ActiveHydroshare.authenticate(**account.to_dict()):
+                            connection_message = 'Successfully authenticated HydroShare account details'
+                            connected = True
+                            current_account_name = resource.hs_account_name
+                    except Exception as e:
+                        connection_message = 'Unable to authenticate - An exception occurred: {}'.format(e)
+                    finally:
+                        print connection_message
+
+                resource_files = self.ActiveHydroshare.getResourceFileList(resource.resource_id)
+                print 'Resource {} has {} files:'.format(resource.resource.title, len(resource_files))
+                for res_file in resource_files:
+                    print res_file
+
+                resource_names.append(resource.resource.title)
+                current_dataset += 1
+                self.NotifyVisualH2O('Files_Uploaded', resource.resource.title, current_dataset, dataset_count)
+            except H2OService.StopThreadException as e:
+                print 'File upload stopped: {}'.format(e.message)
+                break
+            except Exception as e:
+                print e
+        self.NotifyVisualH2O('Uploads_Completed', resource_names, current_dataset, dataset_count)
+
 
     def _thread_checkpoint(self):
         if self.StopThread:
@@ -146,11 +180,11 @@ class H2OService:
                     self.ConnectToHydroShareAccount(resource.hs_account_name)
                     current_account_name = resource.hs_account_name
 
-                # resource_files = self.ActiveHydroshare.getResourceFileList(resource.resource_id)
-                # print 'Resource {} has {} files:'.format(resource.resource.title, len(resource_files))
-                # for res_file in resource_files:
-                #     print res_file
-                # continue
+                if APP_SETTINGS.H2O_DEBUG:
+                    resource_files = self.ActiveHydroshare.getResourceFileList(resource.resource_id)
+                    print 'Resource {} has {} files:'.format(resource.resource.title, len(resource_files))
+                    for res_file in resource_files:
+                        print res_file
 
                 self._thread_checkpoint()
                 response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)

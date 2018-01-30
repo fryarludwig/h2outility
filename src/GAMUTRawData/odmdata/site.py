@@ -1,5 +1,5 @@
 # Declare a mapped class
-from sqlalchemy import *
+from sqlalchemy import Column, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from base import Base

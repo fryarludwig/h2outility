@@ -2,7 +2,8 @@ import wx
 import wx.xrc
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility
 from InputValidator import *
-from pubsub import pub
+from wx.lib.pubsub import pub
+# from pubsub import pub
 
 
 # noinspection PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,

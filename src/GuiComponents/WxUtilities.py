@@ -19,20 +19,20 @@ class GRID_SELECTION_MODES:
 
 class WxHelper:
     class SeriesGrid(wx.grid.Grid):
-        LABELS = [('Id', 30),
-                  ('Site Code', 100),
-                  ('Site Name', 150),
-                  ('Variable Name', 150),
-                  ('QC Code', 50),
-                  ('Source Description', 150),
-                  ('Method Description', 150)]
+        LABELS = [(u'Id', 30),
+                  (u'Site Code', 100),
+                  (u'Site Name', 150),
+                  (u'Variable Name', 150),
+                  (u'QC Code', 50),
+                  (u'Source Description', 150),
+                  (u'Method Description', 150)]
 
         SERIES_COL = {
-            'Site': 1,
-            'Variable': 3,
-            'QC Code': 4,
-            'Source': 5,
-            'Method': 6
+            u'Site': 1,
+            u'Variable': 3,
+            u'QC Code': 4,
+            u'Source': 5,
+            u'Method': 6
         }
 
         def __init__(self, app, parent, font=wx.SMALL_FONT, size=None):
@@ -90,8 +90,10 @@ class WxHelper:
             sorted_list = []
             for i in range(0, self.NumberRows):
                 sort_value = self.GetCellValue(i, column_number)
-                if unicode.isdigit(sort_value):
-                    sort_value = int(sort_value)
+                try:
+                    sort_value = float(sort_value)
+                except:  # Turns out this is almost as fast an if statement, and the if statement wasn't reliable enough
+                    pass
                 sorted_list.append((sort_value, self.GetValuesForRow(i)))
 
             sorted_list.sort(key=lambda x: x[0], reverse=sort_inverted)
