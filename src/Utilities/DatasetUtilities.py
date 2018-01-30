@@ -1,24 +1,12 @@
-import sys
-import os
-import logging
 import datetime
-import pandas
-import pyodbc
-import jsonpickle
-from sqlalchemy.exc import InvalidRequestError
 from multiprocessing import Process, Queue
 from time import sleep
-from sqlalchemy.exc import InvalidRequestError
 
-from GAMUTRawData.odmdata import Series
-from GAMUTRawData.odmdata import Site
-from GAMUTRawData.odmdata import Source
-from GAMUTRawData.odmdata import QualityControlLevel
-from GAMUTRawData.odmdata import SpatialReference
-from GAMUTRawData.odmdata import Qualifier
-from GAMUTRawData.odmdata import DataValue
-from GAMUTRawData.odmservices import ServiceManager, SeriesService
+import pandas
+
 from Common import *
+from GAMUTRawData.odmdata import QualityControlLevel, Series, Site, Source
+from GAMUTRawData.odmservices import SeriesService, ServiceManager
 
 this_file = os.path.realpath(__file__)
 directory = os.path.dirname(os.path.dirname(this_file))
@@ -240,7 +228,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                     return file_name
             elif dataframe is None and csv_end_datetime is not None:
                 print 'File exists but there are no new data values to write'
-                return file_name
+                # return file_name
             else:
                 print 'No data values exist for this dataset'
                 failed_files.append((file_name, 'No data values found for file'))

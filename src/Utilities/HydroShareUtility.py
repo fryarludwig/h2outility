@@ -1,15 +1,16 @@
-import re
-
-import dateutil.parser
 import xml.etree.ElementTree as ElementTree
 
-from datetime import datetime
-from hs_restclient import *
+import dateutil.parser
+from hs_restclient import HydroShareNotFound, HydroShareAuthBasic, HydroShareAuthOAuth2, HydroShare, HydroShareException
+from oauthlib.oauth2 import InvalidClientError, InvalidGrantError
+
 from Common import *
-from oauthlib.oauth2 import InvalidGrantError, InvalidClientError
 
 
 class HydroShareAccountDetails:
+    """
+    Used to organize account authentication details
+    """
     def __init__(self, values=None):
         self.name = ""
         self.username = ""
@@ -30,6 +31,9 @@ class HydroShareAccountDetails:
 
 
 class HydroShareResource:
+    """
+    Used to organize HydroShare resource details
+    """
     def __init__(self, resource_dict):
         self.id = resource_dict['resource_id'] if 'resource_id' in resource_dict else ""
         self.owner = resource_dict['creator'] if 'creator' in resource_dict else ""
@@ -58,7 +62,8 @@ class HydroShareResource:
                          "value": {"start": self.period_start, "end": self.period_end}}]
         }
 
-        print metadata
+        if APP_SETTINGS.H2O_DEBUG:
+            print metadata
         return metadata
 
     def __str__(self):

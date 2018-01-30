@@ -1,22 +1,11 @@
 import logging
+import threading
 
+import pandas
 from sqlalchemy import distinct, func
 
-from GAMUTRawData.odmdata import SessionFactory
-from GAMUTRawData.odmdata import Site
-from GAMUTRawData.odmdata import Variable
-from GAMUTRawData.odmdata import Unit
-from GAMUTRawData.odmdata import Series
-from GAMUTRawData.odmdata import DataValue
-from GAMUTRawData.odmdata import Qualifier
-from GAMUTRawData.odmdata import OffsetType
-from GAMUTRawData.odmdata import Sample
-from GAMUTRawData.odmdata import Method
-from GAMUTRawData.odmdata import QualityControlLevel
-from GAMUTRawData.odmdata import ODMVersion
-from Common import APP_SETTINGS
-import pandas
-import threading
+from GAMUTRawData.odmdata import DataValue, Method, ODMVersion, OffsetType, Qualifier, QualityControlLevel, Sample, \
+    Series, SessionFactory, Site, Unit, Variable
 
 logger = logging.getLogger('main')
 
