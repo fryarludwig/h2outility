@@ -180,7 +180,10 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
         elif len(variables) == 0 or len(methods) == 0:
             print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
         else:
-            site = series_list[0].site  # type: Site
+            try:
+                site = series_list[0].site  # type: Site
+            except Exception:
+                site = Site(site_code=series_list[0].site_code, site_name=series_list[0].site_name)
             source = series_list[0].source  # type: Source
             qc = series_list[0].quality_control_level  # type: QualityControlLevel
             variables = list(variables)

@@ -92,7 +92,6 @@ class H2OService:
                 print e
         self.NotifyVisualH2O('Uploads_Completed', resource_names, current_dataset, dataset_count)
 
-
     def _thread_checkpoint(self):
         if self.StopThread:
             raise H2OService.StopThreadException("Thread stopped by user")
@@ -158,9 +157,11 @@ class H2OService:
                     self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
                 except H2OService.StopThreadException as e:
                     print 'Dataset generation stopped: {}'.format(e.message)
-                    break
+                    return
                 except Exception as e:
-                    print 'Exception encountered while generating datasets:\n{}'.format(e)
+                    self.NotifyVisualH2O('Operations_Stopped',
+                                         'Exception encountered while generating datasets:\n{}'.format(e))
+                    return
         print 'Dataset generation completed without error'
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 

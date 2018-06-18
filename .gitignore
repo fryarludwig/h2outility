@@ -8,6 +8,8 @@
 __pycache__
 htmlcov
 
+!connection_details.pyo
+
 # Packages
 *.egg
 *.egg-info
@@ -74,3 +76,7 @@ src/temporary_metadata*
 src/GAMUT_CSV_Files_old
 src/resourcemetadata.xml
 src/H2O_dataset_files
+
+build/
+dist/
+VisualUpdater.spec

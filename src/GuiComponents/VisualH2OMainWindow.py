@@ -7,6 +7,7 @@ import wx.dataview
 import wx.grid
 
 from wx.lib.pubsub import pub
+import wx.lib.platebtn as platebtn
 # from pubsub import pub
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate, \
     HydroShareResource
@@ -20,6 +21,7 @@ from EditAccountsDialog import HydroShareAccountDialog
 from WxUtilities import WxHelper, Orientation, PADDING, ALIGN
 from ResourceTemplatesDialog import HydroShareResourceTemplateDialog
 from InputValidator import *
+from GuiComponents.HydroShareUIController import HydroShareUIController
 
 service_manager = ServiceManager()
 
@@ -29,9 +31,10 @@ class CHOICE_DEFAULTS:
     SELECT_TEMPLATE_CHOICE = 'Select a resource template'
     RESOURCE_STR = '{:<130} (ID {})'
     CREATE_NEW_RESOURCE = 'Create a new resource'
-    MANAGED_RESOURCES = '      -- {} resources managed by H2O --'
-    UNMANAGED_RESOURCES = '      -- {} resources not managed by H2O --'
+    MANAGED_RESOURCES = '      -- {} resource{} managed by H2O --'
+    UNMANAGED_RESOURCES = '      -- {} resource{} not managed by H2O --'
     CONNECT_TO_HYDROSHARE = 'Please connect to a HydroShare account'
+
 
 HS_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id)
 H2O_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.resource.title, resource.id)
@@ -41,13 +44,23 @@ H2O_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.reso
 # PyUnusedLocal
 # noinspection PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class VisualH2OWindow(wx.Frame):
+
+    selected_account_name = None
+
+
+
     def __init__(self, parent, id, title):
         ###########################################
         # Declare/populate variables, wx objects  #
         ###########################################
+
+        super(VisualH2OWindow, self).__init__(parent, id, title)
+
         APP_SETTINGS.GUI_MODE = True
-        self.ORIGINAL_SIZE = (940, 860)
+
         self.MONOSPACE = wx.Font(9, 75, 90, 90, False, "Inconsolata")
+
+        self.ORIGINAL_SIZE = (940, 860)
         self._setup_internal_subscriptions()
         h2o_subs = self._setup_h2o_subscriptions()
         self.H2OService = H2OService(subscriptions=h2o_subs)
@@ -76,8 +89,13 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.LoadData()
         self.update_choice_controls()
 
+        self.resourceUIController = HydroShareUIController(inputs=self.resource_inputs, buttons=self.resource_buttons,
+                                                           dropdowns=self.resource_dropdowns)
+
+        self.resourceUIController.Disable()
+
     def _setup_internal_subscriptions(self):
-        SUBSCRIPTIONS = [
+        subscriptions = [
             (self.on_delete_resource_template_clicked, 'hs_resource_remove'),
             (self.on_save_resource_template, 'hs_resource_save'),
             (self.on_create_resource, 'hs_resource_create'),
@@ -86,13 +104,15 @@ class VisualH2OWindow(wx.Frame):
             (self.on_remove_hydroshare_auth, 'hs_auth_remove'),
             (self.on_save_database_auth, 'db_auth_save'),
             (self.on_test_database_auth, 'db_auth_test'),
-            (self.on_remove_database_auth, 'db_auth_remove')
+            (self.on_remove_database_auth, 'db_auth_remove'),
+            (self.__onConnectHydroshare, 'hydroshare.connect'),
+            (self.__onChangeResource, 'resource.change')
         ]
-        for sub_tuple in SUBSCRIPTIONS:
-            pub.subscribe(sub_tuple[0], sub_tuple[1])
+        for observer, signal in subscriptions:
+            pub.subscribe(observer, signal)
 
     def _setup_h2o_subscriptions(self):
-        H2O_SUBSCRIPTIONS = [
+        subscriptions = [
             (self.on_log_print, 'logger'),
             (self.on_operations_stopped, 'Operations_Stopped'),
             (self.on_datasets_generated, 'Datasets_Completed'),
@@ -103,9 +123,9 @@ class VisualH2OWindow(wx.Frame):
             (self.update_status_gauge_uploads, 'Uploads_Completed')
         ]
 
-        for sub_tuple in H2O_SUBSCRIPTIONS:
+        for sub_tuple in subscriptions:
             pub.subscribe(sub_tuple[0], sub_tuple[1])
-        return [sub_tuple[1] for sub_tuple in H2O_SUBSCRIPTIONS]
+        return [sub_tuple[1] for sub_tuple in subscriptions]
 
     def on_log_print(self, message=""):
         if message is None or len(message) < 4 or message.isspace():
@@ -118,8 +138,6 @@ class VisualH2OWindow(wx.Frame):
         self.log_message_listbox.Deselect(len(self.log_message_listbox.Items) - 1)
 
     def update_choice_controls(self, progress=None):
-        # if progress is not None:
-        #     self.status_gauge = progress if 100 >= progress >= 0 else progress % 100
         WxHelper.UpdateChoiceControl(self.database_connection_choice, self._get_database_choices())
         WxHelper.UpdateChoiceControl(self.hydroshare_account_choice, self._get_hydroshare_choices())
 
@@ -140,6 +158,9 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.SaveData()
 
     def on_create_resource(self, result=None):
+
+        wait = wx.BusyCursor()
+
         if result is None:
             return
         template = ResourceTemplate(result)
@@ -149,6 +170,10 @@ class VisualH2OWindow(wx.Frame):
             self.hs_resource_choice.Append(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
             self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
             self.populate_resource_fields(resource)
+
+            self.resourceUIController.EnableControls()
+            # self.resourceUIController.EnableButtons()
+
         else:
             self.populate_resource_fields(None)
 
@@ -169,14 +194,20 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.SaveData()
 
     def on_test_database_auth(self, result=None):
+
+        wait = wx.BusyCursor()
+
         if result is None:
-            pub.sendMessage('db_auth_test_reply', reply='An error occurred, please try again later')
+            wx.CallAfter(pub.sendMessage, 'db_auth_test_reply', reply='An error occurred, please try again later')
             return
+
         db_details = OdmDatasetConnection(result)
         if db_details.VerifyConnection():
-            pub.sendMessage('db_auth_test_reply', reply='Successfully authenticated!')
+
+            wx.CallAfter(pub.sendMessage, 'db_auth_test_reply', reply='Successfully authenticated!')
+
         else:
-            pub.sendMessage('db_auth_test_reply', reply='Authentication details were not accepted')
+            wx.CallAfter(pub.sendMessage, 'db_auth_test_reply', reply='Authentication details were not accepted')
 
     def on_remove_hydroshare_auth(self, result=None):
         if result is None:
@@ -240,9 +271,14 @@ class VisualH2OWindow(wx.Frame):
                                    self._resources.iteritems() if hs_id not in self.H2OService.ManagedResources]
             managed_resources.sort(reverse=self.invert_resource_choices_checkbox.IsChecked())
             unmanaged_resources.sort(reverse=self.invert_resource_choices_checkbox.IsChecked())
+
             choices = [CHOICE_DEFAULTS.CREATE_NEW_RESOURCE,
-                       CHOICE_DEFAULTS.MANAGED_RESOURCES.format(len(managed_resources))]
-            choices += managed_resources + [CHOICE_DEFAULTS.UNMANAGED_RESOURCES.format(len(unmanaged_resources))]
+                       CHOICE_DEFAULTS.MANAGED_RESOURCES.format(len(managed_resources),
+                                                                's' if len(managed_resources) > 1 else '')]
+
+            choices += managed_resources
+            choices += [CHOICE_DEFAULTS.UNMANAGED_RESOURCES.format(len(unmanaged_resources),
+                                                                   's' if len(unmanaged_resources) > 1 else '')]
             choices += unmanaged_resources
         return choices
 
@@ -278,7 +314,8 @@ class VisualH2OWindow(wx.Frame):
             self.h2o_series_dict.clear()
             self.odm_series_dict.clear()
 
-        busy = wx.BusyInfo("Loading ODM series from database {}".format(connection.name))
+        wait = wx.BusyCursor()
+        busy = wx.BusyInfo("Loading ODM series from database {}".format(connection.name), parent=self.panel)
 
         if connection.VerifyConnection():
             self.h2o_series_dict.clear()
@@ -293,13 +330,6 @@ class VisualH2OWindow(wx.Frame):
         else:
             self.on_log_print('Unable to authenticate using connection {}'.format(connection.name))
 
-    def set_hydroshare_connection(self, account_name):
-        busy = wx.BusyInfo("Loading HydroShare account information for {}".format(account_name))
-        if self.H2OService.ConnectToHydroShareAccount(account_name):
-            self._resources = self.H2OService.FetchResources()
-        else:
-            self._resources = None
-
     def on_database_chosen(self, event):
         if event.GetSelection() > 0:
             selection_string = self.database_connection_choice.GetStringSelection()
@@ -309,12 +339,39 @@ class VisualH2OWindow(wx.Frame):
             self.set_odm_connection(None)
         self.reset_series_in_grid()
 
-    def on_hydroshare_account_chosen(self, event):
-        self._resources = None
-        if event.GetSelection() != 0:
-            self.on_log_print('Connecting to HydroShare')
-            self.set_hydroshare_connection(self.hydroshare_account_choice.GetStringSelection())
+    def set_hydroshare_connection(self, account_name):
+        wait = wx.BusyCursor()
+
+        busy = wx.BusyInfo("Loading HydroShare account information for {}".format(account_name), parent=self.panel)
+
+        if self.H2OService.ConnectToHydroShareAccount(account_name):
+            self._resources = self.H2OService.FetchResources()
+        else:
+            self._resources = None
+
+        del busy
+
+    def __onConnectHydroshare(self, data, extra1=None, extra2=None):
+
+        # enables UI elements for resource management
+        self.resourceUIController.EnableDropdown()
+
+        self.on_log_print('Connecting to HydroShare')
+        self.set_hydroshare_connection(data)
+
         self._update_target_choices()
+
+    def on_select_hydroshare_account(self, event):
+        self._resources = None
+        self.hydroshare_account_choice.Close()
+
+        if event.GetSelection() != 0:
+            account_name = self.hydroshare_account_choice.GetStringSelection()
+
+            if self.selected_account_name != account_name:
+                self.selected_account_name = account_name
+
+                wx.CallAfter(pub.sendMessage, 'hydroshare.connect', data=account_name)
 
     def reset_series_in_grid(self, event=None):
         if self.odm_series_dict is None or len(self.odm_series_dict) == 0:
@@ -353,9 +410,11 @@ class VisualH2OWindow(wx.Frame):
 
     def _remove_from_managed_clicked(self, event):
         resource = self._get_selected_resource()  # type: HydroShareResource
+
         if resource is None:
-            self.on_log_print('Invalid resource selected, cannot remove from managed resources')
+            self.on_log_print('Resource not selected.')
             return
+
         self.H2OService.ManagedResources.pop(resource.id, None)
         self.H2OService.SaveData()
         self._update_target_choices()
@@ -377,8 +436,17 @@ class VisualH2OWindow(wx.Frame):
             print 'File delete canceled'
 
     def _save_managed_clicked(self, event):
+
         if not self._verify_dataset_selections():
+            if len(self.selected_series_grid.GetSeries()):
+                self.on_log_print('"Selected Series" box is empty. Please add one or more series to "Selected Series" to apply changes.')
+            else:
+                self.on_log_print(
+                    'You must add series to "Selected Series" box and click "{}" before you can apply changes.'.format(
+                        self.run_script_button.GetLabel()))
             return
+
+        wait = wx.BusyCursor()
 
         series = {}
         for series_id in self.selected_series_grid.GetSeries():
@@ -387,10 +455,10 @@ class VisualH2OWindow(wx.Frame):
 
         resource = self._get_selected_resource()  # type: HydroShareResource
         if resource is None:
-            self.on_log_print('Invalid resource selected, cannot save changes')
+            self.on_log_print('Resource not selected, cannot save changes.')
             return
 
-        resource.title = self.resource_title_input.Value
+        # resource.title = self.resource_title_input.Value
         resource.abstract = self.resource_abstract_input.Value
         resource.agency_url = self.resource_agency_website_input.Value
         resource.award_number = self.resource_award_number_input.Value
@@ -417,8 +485,8 @@ class VisualH2OWindow(wx.Frame):
             self.on_log_print('Invalid options - please select the ODM series you would like to add to the dataset')
         elif self.hydroshare_account_choice.GetSelection() == 0:
             self.on_log_print('Invalid options - please select a HydroShare account to use')
-        elif len(self.resource_title_input.Value) == 0:
-            self.on_log_print('Invalid options - please enter a resource name')
+        # elif len(self.resource_title_input.Value) == 0:
+        #     self.on_log_print('Invalid options - please enter a resource name')
         else:
             return True
         return False
@@ -433,20 +501,45 @@ class VisualH2OWindow(wx.Frame):
         self.stop_script_button.Enable(enable=True)
         self.H2OService.SaveData()
         self.H2OService.LoadData()
-        self.H2OService.StartOperations()
+
+        try:
+            self.H2OService.StartOperations()
+        except Exception as e:
+            self.on_log_print(e.message)
 
     def on_stop_script_clicked(self, event):
         self.on_log_print('Stopping the script... This may take up to a minute')
         self.status_gauge.Pulse()
         self.H2OService.StopActions()
 
-    def _destination_resource_changed(self, event):
+    def __onChangeResource(self, data, extra1=None, extra2=None):
+        wait = wx.BusyCursor()
+        self._change_resource(data)
+
+    def _on_select_resource(self, event):
+        wx.CallAfter(pub.sendMessage, 'resource.change', data=event)
+
+    def _change_resource(self, event):
+
         if self.hs_resource_choice.GetStringSelection() == CHOICE_DEFAULTS.CREATE_NEW_RESOURCE:
+
+            # disable buttons for resource management
+            # self.resourceUIController.DisableControls()
+            self.resourceUIController.DisableButtons()
+
             result = self.on_edit_resource_templates_clicked(None, create_resource=True)
+
             if result == 0:
                 self.populate_resource_fields(None)
                 self.reset_series_in_grid()
-        elif len(self._resources) > 2:
+
+        # elif self._resources is not None and len(self._resources) > 2:  # "> 2" ??? What???
+        else:
+
+            # enable buttons for resource management
+            self.resourceUIController.EnableButtons()
+            # self.resourceUIController.EnableControls()
+
             resource = self._get_selected_resource()        # type: H2OManagedResource
 
             if resource is None:
@@ -487,14 +580,15 @@ class VisualH2OWindow(wx.Frame):
 
     def populate_resource_fields(self, resource):
         if resource is None:
-            self.resource_title_input.Value = ''
+            # self.resource_title_input.Value = ''
             self.resource_abstract_input.Value = ''
             self.resource_agency_website_input.Value = ''
             self.resource_award_number_input.Value = ''
             self.resource_award_title_input.Value = ''
             self.resource_funding_agency_input.Value = ''
         else:
-            self.resource_title_input.Value = resource.title
+            # self.resource_title_input.SetLabel(resource.title)
+            # self.resource_title_input.Value = resource.title
             self.resource_abstract_input.Value = resource.abstract
             self.resource_agency_website_input.Value = resource.agency_url
             self.resource_award_number_input.Value = resource.award_number
@@ -546,8 +640,10 @@ class VisualH2OWindow(wx.Frame):
             self.status_gauge.SetValue(0)
         self.on_log_print(state + message)
 
-    def create_gui_label(self, label, font=None):
-        return WxHelper.GetLabel(self.panel, label, font)
+    def create_gui_label(self, label, font=None, style=7):
+        if font is None:
+            font = self.MONOSPACE
+        return WxHelper.GetLabel(self.panel, label, font, style=style)
 
     def _build_main_window(self):
         ######################################
@@ -564,8 +660,12 @@ class VisualH2OWindow(wx.Frame):
         #   Build connection details sizer   #
         ######################################
         edit_hydroshare_button = WxHelper.GetButton(self, self.panel, u'Edit...', on_click=self.on_edit_hydroshare)
-        self.hydroshare_account_choice = WxHelper.GetChoice(self, self.panel, self._get_hydroshare_choices(),
-                                                            on_change=self.on_hydroshare_account_chosen, size_x=310, size_y=23,
+        self.hydroshare_account_choice = WxHelper.GetChoice(self,
+                                                            self.panel,
+                                                            self._get_hydroshare_choices(),
+                                                            on_change=self.on_select_hydroshare_account,
+                                                            size_x=310,
+                                                            size_y=23,
                                                             font=self.MONOSPACE)
 
         hs_account_sizer.Add(self.create_gui_label(u'Select a HydroShare account to continue'), pos=(0, 0), span=(1, 4),
@@ -573,63 +673,14 @@ class VisualH2OWindow(wx.Frame):
         hs_account_sizer.Add(self.hydroshare_account_choice, pos=(1, 0), span=(1, 4), flag=ALIGN.LEFT)
         hs_account_sizer.Add(edit_hydroshare_button, pos=(1, 4), span=(1, 1), flag=ALIGN.LEFT)
 
-        ###################################################
-        #   Sizer for HydroShare resource metadata        #
-        ###################################################
+        """
+        Sizer for HydroShare resource metadata
+        """
+        self._layout_resource_panel(sizer=resource_sizer)
 
-        self.hs_resource_choice = WxHelper.GetChoice(self.panel, self.panel, self._get_destination_resource_choices(),
-                                                     on_change=self._destination_resource_changed,
-                                                     font=self.MONOSPACE)
-
-        self.invert_resource_choices_checkbox = WxHelper.GetCheckBox(self, self.panel, u'Invert Resource Sorting', on_change=self._sort_resource_choices)
-        self.resource_title_input = WxHelper.GetTextInput(self.panel)
-        self.resource_abstract_input = WxHelper.GetTextInput(self.panel, wrap_text=True)
-        self.resource_funding_agency_input = WxHelper.GetTextInput(self.panel)
-        self.resource_agency_website_input = WxHelper.GetTextInput(self.panel)
-        self.resource_award_title_input = WxHelper.GetTextInput(self.panel)
-        self.resource_award_number_input = WxHelper.GetTextInput(self.panel)
-
-        # Dataset action buttons
-        self.save_dataset_button = WxHelper.GetButton(self, self.panel, u" Apply Changes ", self._save_managed_clicked,
-                                                      size_x=100, size_y=30)
-        self.clear_dataset_button = WxHelper.GetButton(self, self.panel, u" Clear Changes ",
-                                                       self._remove_from_managed_clicked, size_x=100, size_y=30)
-        self.remove_files_button = WxHelper.GetButton(self, self.panel, u"Delete Resource Files",
-                                                      self._delete_files_clicked, size_x=150, size_y=30)
-
-        col_base = 4
-        row_base = 5
-        flags = ALIGN.CENTER
-        text_flags = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
-
-        resource_sizer.Add(self.create_gui_label(u'Select a resource'), pos=(0, 0), span=(1, 1), flag=ALIGN.CENTER)
-        resource_sizer.Add(self.invert_resource_choices_checkbox, pos=(0, 6), span=(1, 2), flag=text_flags)
-        resource_sizer.Add(self.hs_resource_choice, pos=(1, 0), span=(1, 8), flag=ALIGN.CENTER)
-
-        resource_sizer.Add(self.create_gui_label(u'Resource Title'), pos=(2, 0), span=(1, 1))
-        resource_sizer.Add(self.create_gui_label(u'Resource Abstract'), pos=(4, 0), span=(1, 1))
-        resource_sizer.Add(self.resource_title_input, pos=(3, 0), span=(1, 8), flag=ALIGN.LEFT)
-        resource_sizer.Add(self.resource_abstract_input, pos=(row_base, 0), span=(4, 4), flag=ALIGN.CENTER | PADDING.ALL)
-
-        resource_sizer.Add(self.create_gui_label(u'Funding Agency'), pos=(row_base, col_base), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.create_gui_label(u'Agency Website'), pos=(row_base + 1, col_base), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.create_gui_label(u'Award Title'), pos=(row_base + 2, col_base), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.create_gui_label(u'Award Number'), pos=(row_base + 3, col_base), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.resource_funding_agency_input, pos=(row_base, col_base + 1), span=(1, 3), flag=flags)
-        resource_sizer.Add(self.resource_agency_website_input, pos=(row_base + 1, col_base + 1), span=(1, 3),
-                           flag=flags)
-        resource_sizer.Add(self.resource_award_title_input, pos=(row_base + 2, col_base + 1), span=(1, 3), flag=flags)
-        resource_sizer.Add(self.resource_award_number_input, pos=(row_base + 3, col_base + 1), span=(1, 3), flag=flags)
-
-        resource_sizer.Add(self.create_gui_label(u'Resource Management:'), pos=(row_base + 4, 4), span=(1, 1), flag=text_flags)
-        resource_sizer.Add(self.save_dataset_button, pos=(row_base + 4, 7), span=(1, 1), flag=wx.ALIGN_CENTER)
-        resource_sizer.Add(self.clear_dataset_button, pos=(row_base + 4, 6), span=(1, 1), flag=wx.ALIGN_CENTER)
-        resource_sizer.Add(self.remove_files_button, pos=(row_base + 4, 5), span=(1, 1), flag=wx.ALIGN_CENTER)
-
-        ###################################################
-        #         ODM Series selection sizer              #
-        ###################################################
-
+        """
+        ODM Series selection sizer
+        """
         # Buttons (and bitmaps) to add or remove series from the active dataset
         left_arrow = WxHelper.GetBitmap(APP_SETTINGS.PROJECT_DIR + '/GuiComponents/previous_icon.png', 20, 20)
         right_arrow = WxHelper.GetBitmap(APP_SETTINGS.PROJECT_DIR + '/GuiComponents/next_icon.png', 20, 20)
@@ -665,10 +716,9 @@ class VisualH2OWindow(wx.Frame):
         odm_series_sizer.Add(self.chunk_by_year_checkbox, pos=(row + 1, 8), span=(1, 1), flag=text_flags)
 
         # Series selection controls
-        bold_font = wx.Font(11, wx.DEFAULT, wx.NORMAL, wx.NORMAL)
-        odm_series_sizer.Add(self.create_gui_label(u'Available Series', font=bold_font), pos=(row + 2, 0), span=(1, 4),
+        odm_series_sizer.Add(self.create_gui_label(u'Available Series', font=self.MONOSPACE.Bold()), pos=(row + 2, 0), span=(1, 4),
                              flag=wx.ALIGN_CENTER)
-        odm_series_sizer.Add(self.create_gui_label(u'Selected Series', font=bold_font), pos=(row + 2, 5), span=(1, 4),
+        odm_series_sizer.Add(self.create_gui_label(u'Selected Series', font=self.MONOSPACE.Bold()), pos=(row + 2, 5), span=(1, 4),
                              flag=wx.ALIGN_CENTER)
 
         grid_x_size = 500
@@ -682,12 +732,11 @@ class VisualH2OWindow(wx.Frame):
         odm_series_sizer.Add(self.add_to_selected_button, pos=(row + 4, 4), span=(1, 1), flag=wx.ALIGN_CENTER)
         odm_series_sizer.Add(self.remove_selected_button, pos=(row + 6, 4), span=(1, 1), flag=wx.ALIGN_CENTER)
 
-        ######################################
-        # Build action sizer and logging box #
-        ######################################
-
-        self.run_script_button = WxHelper.GetButton(self, self.panel, u"Run Script", self.on_run_script_clicked)
-        self.stop_script_button = WxHelper.GetButton(self, self.panel, u"Stop Script", self.on_stop_script_clicked)
+        """
+        Build action sizer and logging box
+        """
+        self.run_script_button = WxHelper.GetButton(self, self.panel, "Run Script", self.on_run_script_clicked)
+        self.stop_script_button = WxHelper.GetButton(self, self.panel, "Stop Script", self.on_stop_script_clicked)
         self.stop_script_button.Enable(enable=False)
 
         self.status_gauge = wx.Gauge(self.panel, wx.ID_ANY, 100, wx.DefaultPosition, wx.DefaultSize, wx.GA_HORIZONTAL)
@@ -696,15 +745,22 @@ class VisualH2OWindow(wx.Frame):
         self.log_message_listbox = WxHelper.GetListBox(self, self.panel, [], size_x=920, size_y=100,
                                                        font=self.MONOSPACE, on_right_click=self.on_right_click_log_output)
 
+        self.clear_console_button = platebtn.PlateButton(self.panel, label="Clear Console",
+                                                         style=platebtn.PB_STYLE_SQUARE)
+
+        self.clear_console_button = WxHelper.GetButton(self, self.panel, "Clear Console",
+                                                       lambda ev: self.log_message_listbox.Clear(),
+                                                       style=platebtn.PB_STYLE_GRADIENT)
+
         action_status_sizer.Add(self.status_gauge, pos=(0, 0), span=(1, 8), flag=ALIGN.CENTER)
         action_status_sizer.Add(self.run_script_button, pos=(0, 9), span=(1, 1), flag=ALIGN.CENTER)
         action_status_sizer.Add(self.stop_script_button, pos=(0, 8), span=(1, 1), flag=ALIGN.CENTER)
         action_status_sizer.Add(self.log_message_listbox, pos=(1, 0), span=(2, 10), flag=ALIGN.CENTER)
+        action_status_sizer.Add(self.clear_console_button, pos=(3, 0), span=(1, 1), flag=ALIGN.CENTER)
 
-        ######################################
-        # Build menu bar and setup callbacks #
-        ######################################
-
+        """
+        Build menu bar and setup callbacks
+        """
         self.add_grid_bag_to_main_sizer(main_sizer, hs_account_sizer, expand=False, flags=PADDING.HORIZONTAL)
         self.add_line_to_main_sizer(main_sizer, flags=PADDING.ALL)
         self.add_grid_bag_to_main_sizer(main_sizer, selection_label_sizer, flags=PADDING.HORIZONTAL)
@@ -713,24 +769,140 @@ class VisualH2OWindow(wx.Frame):
         self.add_line_to_main_sizer(main_sizer, flags=PADDING.ALL)
         self.add_grid_bag_to_main_sizer(main_sizer, action_status_sizer, flags=WxHelper.GetFlags(top=False))
 
-        ######################################
-        # Build menu bar and setup callbacks #
-        ######################################
-
+        """
+        Build menu bar and setup callbacks
+        """
         file_menu = wx.Menu()
 
-        WxHelper.AddNewMenuItem(self, file_menu, u'ODM Connections...', self.on_edit_database)
-        WxHelper.AddNewMenuItem(self, file_menu, u'HydroShare Accounts...', self.on_edit_hydroshare)
-        WxHelper.AddNewMenuItem(self, file_menu, u'Resource Templates...', self.on_edit_resource_templates_clicked)
+        WxHelper.AddNewMenuItem(self, file_menu, 'ODM Connections...', self.on_edit_database)
+        WxHelper.AddNewMenuItem(self, file_menu, 'HydroShare Accounts...', self.on_edit_hydroshare)
+        WxHelper.AddNewMenuItem(self, file_menu, 'Resource Templates...', self.on_edit_resource_templates_clicked)
 
         file_menu.AppendSeparator()
-        WxHelper.AddNewMenuItem(self, file_menu, u'Quit', self.on_quit_clicked)
+        WxHelper.AddNewMenuItem(self, file_menu, 'Quit', self.on_quit_clicked)
         # file_menu.Append(wx.ID_EXIT, 'Quit', 'Quit application')
 
         menuBar = wx.MenuBar()
         menuBar.Append(file_menu, "&File")  # Adding the "filemenu" to the MenuBar
         self.SetMenuBar(menuBar)  # Adding the MenuBar to the Frame content.
         return main_sizer
+
+    def _layout_resource_panel(self, sizer):
+        """
+        Lays out the UI elements dealing with resource management
+        """
+        input_font = self.MONOSPACE
+        label_font = self.MONOSPACE
+        flags = ALIGN.CENTER
+        text_flags = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
+        border_style = wx.BORDER_THEME
+        # col_base = 4
+        # row_base = 2
+
+        rightSizer = WxHelper.GetGridBagSizer()
+        leftSizer = WxHelper.GetGridBagSizer()
+
+        self.hs_resource_choice = WxHelper.GetChoice(self.panel, self.panel, self._get_destination_resource_choices(),
+                                                     on_change=self._on_select_resource,
+                                                     font=self.MONOSPACE)
+
+        self.invert_resource_choices_checkbox = WxHelper.GetCheckBox(self, self.panel, 'Invert Resource Sorting',
+                                                                     on_change=self._sort_resource_choices)
+
+        sizer.Add(self.create_gui_label(u'Select a resource'), pos=(0, 0), span=(1, 1), flag=ALIGN.CENTER)
+        sizer.Add(self.invert_resource_choices_checkbox, pos=(0, 6), span=(1, 2), flag=text_flags)
+        sizer.Add(self.hs_resource_choice, pos=(1, 0), span=(1, 8), flag=ALIGN.CENTER)
+
+        sizer.Add(leftSizer, pos=(2, 0), span=(1, 4))
+        sizer.Add(rightSizer, pos=(2, 4), span=(1, 4), flag=ALIGN.CENTER)
+        # sizer.AddGrowableCol(1)
+
+        """
+        Elements on the LEFT hand side (and below the resource choice list)
+        """
+        self.resource_abstract_label = self.create_gui_label(u'Resource Abstract', font=label_font)
+        self.resource_abstract_input = WxHelper.GetTextInput(self.panel, '', wrap_text=True, style=wx.TE_READONLY)
+
+        leftSizer.Add(self.resource_abstract_label, pos=(0, 0), span=(1, 1))
+        leftSizer.Add(self.resource_abstract_input, pos=(1, 0), span=(4, 4), flag=ALIGN.CENTER | PADDING.ALL)
+
+        """
+        Elements on the RIGHT hand side (also below the resource choice list)
+        """
+        # Inputs
+        self.resource_funding_agency_input = WxHelper.GetTextInput(self.panel, '',
+                                                                   style=wx.BORDER_THEME | wx.TE_READONLY)
+        self.resource_agency_website_input = WxHelper.GetLabel(self.panel, '', style=wx.BORDER_THEME)
+        self.resource_award_title_input = WxHelper.GetLabel(self.panel, '', style=wx.BORDER_THEME)
+        self.resource_award_number_input = WxHelper.GetLabel(self.panel, '', style=wx.BORDER_THEME)
+
+        # Labels
+        fundingAgencyLabel = self.create_gui_label(u'Funding Agency')
+        agencyWebsiteLabel = self.create_gui_label(u'Agency Website')
+        awardTitleLabel = self.create_gui_label(u'Award Title')
+        awardNumberLabel = self.create_gui_label(u'Award Number')
+        resourceManagementLabel = self.create_gui_label(u'Resource Management:')
+
+        rightSizer.Add(fundingAgencyLabel, pos=(0, 0), span=(1, 1), flag=text_flags)
+        rightSizer.Add(self.resource_funding_agency_input, pos=(0, 1), span=(1, 3), flag=flags)
+
+        rightSizer.Add(agencyWebsiteLabel, pos=(1, 0), span=(1, 1), flag=text_flags)
+        rightSizer.Add(self.resource_agency_website_input, pos=(1, 1), span=(1, 3), flag=flags)
+
+        rightSizer.Add(awardTitleLabel, pos=(2, 0), span=(1, 1), flag=text_flags)
+        rightSizer.Add(self.resource_award_title_input, pos=(2, 1), span=(1, 3), flag=flags)
+
+        rightSizer.Add(awardNumberLabel, pos=(3, 0), span=(1, 1), flag=text_flags)
+        rightSizer.Add(self.resource_award_number_input, pos=(3, 1), span=(1, 3), flag=flags)
+
+
+        """
+        Action Buttons
+        """
+        sizer.Add(resourceManagementLabel, pos=(7, 4), span=(1, 1), flag=text_flags)
+
+        self.save_dataset_button = WxHelper.GetButton(self, self.panel, "Apply Changes", self._save_managed_clicked,
+                                                      size_x=100, size_y=30)
+
+        self.clear_dataset_button = WxHelper.GetButton(self, self.panel, "Clear Changes",
+                                                       self._remove_from_managed_clicked, size_x=100, size_y=30,
+                                                       style=0)
+
+        self.remove_files_button = WxHelper.GetButton(self, self.panel, "Delete Resource Files",
+                                                      self._delete_files_clicked, size_x=150, size_y=30,
+                                                      style=0)
+
+        sizer.Add(self.save_dataset_button, pos=(7, 7), span=(1, 1), flag=wx.ALIGN_CENTER)
+        sizer.Add(self.clear_dataset_button, pos=(7, 6), span=(1, 1), flag=wx.ALIGN_CENTER)
+        sizer.Add(self.remove_files_button, pos=(7, 5), span=(1, 1), flag=wx.ALIGN_CENTER)
+
+        # Do some other stuff...
+        self.resource_dropdowns = [
+            self.hs_resource_choice
+        ]
+
+        self.resource_inputs = [
+            self.invert_resource_choices_checkbox,
+            # self.resource_title_input,
+            self.resource_abstract_input,
+            self.resource_funding_agency_input,
+            self.resource_agency_website_input,
+            self.resource_award_title_input,
+            self.resource_award_number_input
+        ]
+
+        self.resource_buttons = [
+            self.save_dataset_button,
+            self.clear_dataset_button,
+            self.remove_files_button
+        ]
+
+    def toggle_resource_UI_elements(self, enable=True):
+        for el in self.resource_dropdowns + self.resource_inputs + self.resource_buttons:
+            if hasattr(el, 'Disable') and not enable:
+                el.Disable()
+            elif hasattr(el, 'Enable') and enable:
+                el.Enable()
 
     def on_right_click_log_output(self, event):
         message = 'Print only important log messages' if APP_SETTINGS.VERBOSE else 'Print all log messages'

@@ -6,24 +6,42 @@ from oauthlib.oauth2 import InvalidClientError, InvalidGrantError
 
 from Common import *
 
+import json
+
 
 class HydroShareAccountDetails:
     """
     Used to organize account authentication details
     """
+
+    CLIENT_ID = ''
+    CLIENT_SECRET = ''
+
     def __init__(self, values=None):
         self.name = ""
         self.username = ""
         self.password = ""
-        self.client_id = None
-        self.client_secret = None
+
+        settings_path = os.environ.get('SETTINGS_PATH')
+
+        # from connection_details import *
+
+        with open(settings_path, 'rb') as fin:
+            settings = json.load(fin)
+
+            try:
+                self.CLIENT_ID = settings['client_id']
+                self.CLIENT_SECRET = settings['client_secret']
+                self.client_id = self.CLIENT_ID
+                self.client_secret = self.CLIENT_SECRET
+            except KeyError:
+                self.client_id = values['client_id'] if 'client_id' in values else None
+                self.client_secret = values['client_secret'] if 'client_secret' in values else None
 
         if values is not None:
             self.name = values['name'] if 'name' in values else ""
             self.username = values['user'] if 'user' in values else ""
             self.password = values['password'] if 'password' in values else ""
-            self.client_id = values['client_id'] if 'client_id' in values else None
-            self.client_secret = values['client_secret'] if 'client_secret' in values else None
 
     def to_dict(self):
         return dict(username=self.username, password=self.password,
@@ -356,3 +374,10 @@ class HydroShareUtility:
             self.getMetadataForResource(hs_resource)
             return hs_resource
         return None
+
+
+if __name__ == "__main__":
+
+    args = sys.argv
+
+    util = HydroShareAccountDetails(values=args)

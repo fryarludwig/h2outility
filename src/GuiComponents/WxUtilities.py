@@ -233,20 +233,27 @@ class WxHelper:
 
     @staticmethod
     def GetTextInput(parent, placeholder_text=u'', size_x=None, size_y=None, valid_input=PATTERNS.ANY,
-                     max_length=None, wrap_text=False):
+                     max_length=None, wrap_text=False, style=7, **kwargs):
         if wrap_text:
-            text_ctrl = wx.TextCtrl(parent, wx.ID_ANY, value=placeholder_text, pos=wx.DefaultPosition,
-                                    size=wx.DefaultSize,
-                                    style=wx.TE_BESTWRAP | wx.TE_MULTILINE, validator=CharValidator(valid_input))
-        else:
-            text_ctrl = wx.TextCtrl(parent, wx.ID_ANY, value=placeholder_text, pos=wx.DefaultPosition,
-                                    size=wx.DefaultSize,
-                                    style=7, validator=CharValidator(valid_input))
+            style = style | wx.TE_BESTWRAP | wx.TE_MULTILINE
+
+        text_ctrl = wx.TextCtrl(parent, wx.ID_ANY,
+                                value=placeholder_text,
+                                pos=wx.DefaultPosition,
+                                size=wx.DefaultSize,
+                                style=style,
+                                validator=CharValidator(valid_input),
+                                **kwargs)
+
         text_ctrl.SetMinSize(WxHelper.GetWxSize(size_x, size_y))
         text_ctrl.SetMaxSize(WxHelper.GetWxSize(size_x, size_y))
         if max_length is not None:
             text_ctrl.SetMaxLength(max_length)
         return text_ctrl
+
+    @staticmethod
+    def GetStaticText(parent, **kwargs):
+        return wx.StaticText(parent, **kwargs)
 
     @staticmethod
     def GetListBox(app, parent, items, on_right_click=None, size_x=None, size_y=None, font=None, flags=wx.LB_EXTENDED):
@@ -261,8 +268,8 @@ class WxHelper:
         return listbox
 
     @staticmethod
-    def GetButton(app, parent, label, on_click=None, size_x=None, size_y=None):
-        button = wx.Button(parent, wx.ID_ANY, label, wx.DefaultPosition, wx.DefaultSize, 0)
+    def GetButton(app, parent, label, on_click=None, size_x=None, size_y=None, **kwargs):
+        button = wx.Button(parent, id=wx.ID_ANY, label=label, pos=wx.DefaultPosition, size=wx.DefaultSize, **kwargs)
         if size_x is not None and size_y is not None:
             button.SetMinSize(wx.Size(size_x, size_y))
             button.SetMaxSize(wx.Size(size_x, size_y))
@@ -295,8 +302,8 @@ class WxHelper:
         return checkbox
 
     @staticmethod
-    def GetLabel(parent, text, font=None):
-        label = wx.StaticText(parent, wx.ID_ANY, text)
+    def GetLabel(parent, text, font=None, style=7):
+        label = wx.StaticText(parent, wx.ID_ANY, text, style=style)
         if font is not None:
             label.SetFont(font)
         return label

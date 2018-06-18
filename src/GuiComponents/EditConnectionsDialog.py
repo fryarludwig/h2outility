@@ -11,7 +11,7 @@ from wx.lib.pubsub import pub
 # noinspection PyPropertyAccess,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class DatabaseConnectionDialog(wx.Dialog):
     def __init__(self, parent, connections, selected=0):
-        wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=u'Modify Database Connections', pos=wx.DefaultPosition,
+        wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=u'odify Database Connections', pos=wx.DefaultPosition,
                            size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
 
         self.connections = connections
@@ -45,7 +45,8 @@ class DatabaseConnectionDialog(wx.Dialog):
         self.label2.Wrap(-1)
         account_name_sizer1.Add(self.label2, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
 
-        self.connection_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.WORD))
+        self.connection_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1),
+                                                 0, validator=CharValidator(PATTERNS.WORD))
         self.connection_name_input.SetMaxLength(32)
         account_name_sizer1.Add(self.connection_name_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
 
