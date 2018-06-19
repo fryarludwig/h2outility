@@ -115,19 +115,27 @@ class OdmSeriesHelper:
         """
         if APP_SETTINGS.VERBOSE:
             print 'Determining chunking for resource {}'.format(resource)
+
         if resource.single_file:  # If we should group into the fewest possible files
+
             chunk_dict = {}
             for series in resource.selected_series.itervalues():
                 series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)
+
                 if series_tuple not in chunk_dict.keys():
                     chunk_dict[series_tuple] = []
+
                 chunk_dict[series_tuple].append(series)
+
             chunk_list = chunk_dict.values()
+
         else:  # If we should group each into its own file
             chunk_list = [[series] for series in resource.selected_series.itervalues()]
+
         if APP_SETTINGS.VERBOSE:
             for chunk in chunk_list:
                 print 'Chunk: {}'.format(OdmSeriesHelper.SeriesToString(chunk))
+
         return chunk_list
 
     @staticmethod

@@ -1,13 +1,14 @@
 from functools import partial
 
 import datetime
+import threading
+from Queue import Queue
 
 import wx
 import wx.dataview
 import wx.grid
 
 from wx.lib.pubsub import pub
-import wx.lib.platebtn as platebtn
 # from pubsub import pub
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate, \
     HydroShareResource
@@ -21,7 +22,8 @@ from EditAccountsDialog import HydroShareAccountDialog
 from WxUtilities import WxHelper, Orientation, PADDING, ALIGN
 from ResourceTemplatesDialog import HydroShareResourceTemplateDialog
 from InputValidator import *
-from GuiComponents.HydroShareUIController import HydroShareUIController
+from GuiComponents.UIController import UIController
+from sqlalchemy.exc import DBAPIError
 
 service_manager = ServiceManager()
 
@@ -89,10 +91,8 @@ class VisualH2OWindow(wx.Frame):
         self.H2OService.LoadData()
         self.update_choice_controls()
 
-        self.resourceUIController = HydroShareUIController(inputs=self.resource_inputs, buttons=self.resource_buttons,
-                                                           dropdowns=self.resource_dropdowns)
-
         self.resourceUIController.Disable()
+        self.odmSeriesUIController.Disable()
 
     def _setup_internal_subscriptions(self):
         subscriptions = [
@@ -106,7 +106,9 @@ class VisualH2OWindow(wx.Frame):
             (self.on_test_database_auth, 'db_auth_test'),
             (self.on_remove_database_auth, 'db_auth_remove'),
             (self.__onConnectHydroshare, 'hydroshare.connect'),
-            (self.__onChangeResource, 'resource.change')
+            (self.__onChangeResource, 'resource.change'),
+            (self.__onGetResourceComplete, 'onCompleteGetResource'),
+            (self.__onChangeODMDBConnection, 'odmdb.change_connection')
         ]
         for observer, signal in subscriptions:
             pub.subscribe(observer, signal)
@@ -313,6 +315,8 @@ class VisualH2OWindow(wx.Frame):
         if connection is None:
             self.h2o_series_dict.clear()
             self.odm_series_dict.clear()
+            self.odmSeriesUIController.DisableGrids()
+            return
 
         wait = wx.BusyCursor()
         busy = wx.BusyInfo("Loading ODM series from database {}".format(connection.name), parent=self.panel)
@@ -322,22 +326,38 @@ class VisualH2OWindow(wx.Frame):
             self.odm_series_dict.clear()
             service_manager._current_connection = connection.ToDict()
             series_service = service_manager.get_series_service()
-            series_list = series_service.get_all_series()
+
+            try:
+                series_list = series_service.get_all_series()
+            except DBAPIError as e:
+                self.on_log_print('Failed to connect to database: {}'.format(e))
+                return
+
             for series in series_list:
                 self.h2o_series_dict[series.id] = OdmSeriesHelper.CreateH2OSeriesFromOdmSeries(series)
                 self.odm_series_dict[series.id] = series
             self.reset_series_in_grid()
+
+            self.odmSeriesUIController.Enable()
+
         else:
+            self.odmSeriesUIController.DisableGrids()
             self.on_log_print('Unable to authenticate using connection {}'.format(connection.name))
 
-    def on_database_chosen(self, event):
+    def __onChangeODMDBConnection(self, data, extra=None, extra1=None):
+        self.set_odm_connection(self.H2OService.DatabaseConnections[data])
+        self.reset_series_in_grid()
+
+    def _on_select_odm_database(self, event):
+        wait = wx.BusyCursor()
+
         if event.GetSelection() > 0:
-            selection_string = self.database_connection_choice.GetStringSelection()
-            self.set_odm_connection(self.H2OService.DatabaseConnections[selection_string])
+            wx.CallAfter(pub.sendMessage, 'odmdb.change_connection',
+                         data=self.database_connection_choice.GetStringSelection())
         else:
             print "No selection made"
             self.set_odm_connection(None)
-        self.reset_series_in_grid()
+            self.reset_series_in_grid()
 
     def set_hydroshare_connection(self, account_name):
         wait = wx.BusyCursor()
@@ -460,22 +480,35 @@ class VisualH2OWindow(wx.Frame):
 
         # resource.title = self.resource_title_input.Value
         resource.abstract = self.resource_abstract_input.Value
-        resource.agency_url = self.resource_agency_website_input.Value
-        resource.award_number = self.resource_award_number_input.Value
-        resource.award_title = self.resource_award_title_input.Value
-        resource.funding_agency = self.resource_funding_agency_input.Value
+        resource.agency_url = self.resource_agency_website_input.GetLabel()
+        resource.award_number = self.resource_award_number_input.GetLabel()
+        resource.award_title = self.resource_award_title_input.GetLabel()
+        resource.funding_agency = self.resource_funding_agency_input.GetLabel()
 
-        managed = H2OManagedResource(resource=resource,
-                                     odm_series=series,
-                                     resource_id=resource.id,
-                                     hs_account_name=self.hydroshare_account_choice.GetStringSelection(),
-                                     odm_db_name=self.database_connection_choice.GetStringSelection(),
-                                     single_file=not self.chunk_by_series_checkbox.IsChecked(),
-                                     chunk_years=self.chunk_by_year_checkbox.Value,
-                                     associated_files=[])
+        self.save_resource_to_managed_resources(resource, series=series)
 
-        # if we aren't making a new dataset, let's remove the old one from the dictionary
-        self.H2OService.ManagedResources[resource.id] = managed
+    def save_resource_to_managed_resources(self, resource, series=None):
+        if series is None:
+            series = dict()
+
+        if resource.id in self.H2OService.ManagedResources.iteritems():
+            managed = self.H2OService.ManagedResources[resource.id]
+            managed.series = series
+            managed.single_file = not self.chunk_by_series_checkbox.IsChecked()
+            managed.chunk_years = self.chunk_by_year_checkbox.IsChecked()
+            managed.resource_id = resource.id
+        else:
+            managed = H2OManagedResource(resource=resource,
+                                         odm_series=series,
+                                         resource_id=resource.id,
+                                         hs_account_name=self.hydroshare_account_choice.GetStringSelection(),
+                                         odm_db_name=self.database_connection_choice.GetStringSelection(),
+                                         single_file=not self.chunk_by_series_checkbox.IsChecked(),
+                                         chunk_years=self.chunk_by_year_checkbox.Value,
+                                         associated_files=[])
+
+            self.H2OService.ManagedResources[resource.id] = managed
+
         self.H2OService.SaveData()
         self._update_target_choices()
         self.hs_resource_choice.SetStringSelection(HS_RES_STR(resource))
@@ -499,6 +532,9 @@ class VisualH2OWindow(wx.Frame):
         self.on_log_print('Running script')
         self.run_script_button.Enable(enable=False)
         self.stop_script_button.Enable(enable=True)
+
+        self._save_managed_clicked(event)
+
         self.H2OService.SaveData()
         self.H2OService.LoadData()
 
@@ -508,16 +544,56 @@ class VisualH2OWindow(wx.Frame):
             self.on_log_print(e.message)
 
     def on_stop_script_clicked(self, event):
-        self.on_log_print('Stopping the script... This may take up to a minute')
+        self.on_log_print('Stopping the script... this may take a while.')
         self.status_gauge.Pulse()
         self.H2OService.StopActions()
 
     def __onChangeResource(self, data, extra1=None, extra2=None):
-        wait = wx.BusyCursor()
         self._change_resource(data)
 
     def _on_select_resource(self, event):
         wx.CallAfter(pub.sendMessage, 'resource.change', data=event)
+
+    def __onGetResourceComplete(self, resource, extra1=None, extra2=None):
+        """
+        Just in case anyone else comes looking here... 'resource' might be a HydroShareResource or an
+        H2OManagedResource. Your guess is as good as mine.
+        """
+        managed_resource = None
+        if isinstance(resource, H2OManagedResource):
+            managed_resource = resource
+            resource = resource.resource
+
+        self.odmSeriesUIController.EnableDropdown()
+        self.odmSeriesUIController.EnableButtons()
+
+        self.populate_resource_fields(resource)
+        self.reset_series_in_grid()
+        self.save_resource_to_managed_resources(resource)
+
+        self.populate_resource_fields(resource)
+        self.on_log_print('Fetching information for resource {}'.format(resource.title))
+
+        if managed_resource is not None:
+
+            if managed_resource.odm_db_name != self.database_connection_choice.GetStringSelection():
+                if resource.odm_db_name in self.H2OService.DatabaseConnections:
+                    self.database_connection_choice.SetStringSelection(managed_resource.odm_db_name)
+                    self.set_odm_connection(self.H2OService.DatabaseConnections[managed_resource.odm_db_name])
+                else:
+                    self.on_log_print('Error loading ODM series: Unknown connection {}'.format(managed_resource.odm_db_name))
+                    return
+
+            self.reset_series_in_grid()
+            matches = self._get_current_series_ids_from_resource(managed_resource)
+            for series in self.odm_series_dict.itervalues():
+                if series.id in matches:
+                    self.selected_series_grid.AppendSeries(series)
+                else:
+                    self.available_series_grid.AppendSeries(series)
+
+            self.chunk_by_series_checkbox.SetValue(wx.CHK_CHECKED if not managed_resource.single_file else wx.CHK_UNCHECKED)
+            self.chunk_by_year_checkbox.Value = managed_resource.chunk_years
 
     def _change_resource(self, event):
 
@@ -526,6 +602,7 @@ class VisualH2OWindow(wx.Frame):
             # disable buttons for resource management
             # self.resourceUIController.DisableControls()
             self.resourceUIController.DisableButtons()
+            self.odmSeriesUIController.Disable()
 
             result = self.on_edit_resource_templates_clicked(None, create_resource=True)
 
@@ -533,14 +610,12 @@ class VisualH2OWindow(wx.Frame):
                 self.populate_resource_fields(None)
                 self.reset_series_in_grid()
 
-        # elif self._resources is not None and len(self._resources) > 2:  # "> 2" ??? What???
         else:
 
-            # enable buttons for resource management
-            self.resourceUIController.EnableButtons()
-            # self.resourceUIController.EnableControls()
+            # Enable buttons for resource management
+            self.resourceUIController.EnableControls()
 
-            resource = self._get_selected_resource()        # type: H2OManagedResource
+            resource = self._get_selected_resource()  # type: H2OManagedResource | HydroShareResource
 
             if resource is None:
                 print 'No resource was selected'
@@ -549,51 +624,27 @@ class VisualH2OWindow(wx.Frame):
             elif isinstance(resource, HydroShareResource):
                 if resource.id in self.H2OService.ManagedResources:
                     resource = self.H2OService.ManagedResources[resource.id]
-                else:
-                    temp = resource
-                    self.H2OService.ActiveHydroshare.getMetadataForResource(temp)
-                    self.populate_resource_fields(temp)
-                    self.reset_series_in_grid()
-                    return
 
-            self.populate_resource_fields(resource.resource)
-            self.on_log_print('Fetching information for resource {}'.format(resource.resource.title))
+            def __get_resource(q, managed_resource):
+                resource_ = managed_resource.resource if hasattr(managed_resource, 'resource') else managed_resource
+                self.H2OService.ActiveHydroshare.getMetadataForResource(resource_)
 
-            if resource.odm_db_name != self.database_connection_choice.GetStringSelection():
-                if resource.odm_db_name in self.H2OService.DatabaseConnections:
-                    self.database_connection_choice.SetStringSelection(resource.odm_db_name)
-                    self.set_odm_connection(self.H2OService.DatabaseConnections[resource.odm_db_name])
-                else:
-                    self.on_log_print('Error loading ODM series: Unknown connection {}'.format(resource.odm_db_name))
-                    return
+                wx.CallAfter(pub.sendMessage, 'onCompleteGetResource', resource=managed_resource)
 
-            self.reset_series_in_grid()
-            matches = self._get_current_series_ids_from_resource(resource)
-            for series in self.odm_series_dict.itervalues():
-                if series.id in matches:
-                    self.selected_series_grid.AppendSeries(series)
-                else:
-                    self.available_series_grid.AppendSeries(series)
-
-            self.chunk_by_series_checkbox.SetValue(wx.CHK_CHECKED if not resource.single_file else wx.CHK_UNCHECKED)
-            self.chunk_by_year_checkbox.Value = resource.chunk_years
+            thread = threading.Thread(target=__get_resource, args=(Queue(), resource))
+            thread.setDaemon(True)
+            thread.start()
 
     def populate_resource_fields(self, resource):
         if resource is None:
-            # self.resource_title_input.Value = ''
-            self.resource_abstract_input.Value = ''
-            self.resource_agency_website_input.Value = ''
-            self.resource_award_number_input.Value = ''
-            self.resource_award_title_input.Value = ''
-            self.resource_funding_agency_input.Value = ''
+            for label in self.resourceUIController.inputs:
+                label.SetLabel('')
         else:
-            # self.resource_title_input.SetLabel(resource.title)
-            # self.resource_title_input.Value = resource.title
             self.resource_abstract_input.Value = resource.abstract
-            self.resource_agency_website_input.Value = resource.agency_url
-            self.resource_award_number_input.Value = resource.award_number
-            self.resource_award_title_input.Value = resource.award_title
-            self.resource_funding_agency_input.Value = resource.funding_agency
+            self.resource_agency_website_input.SetLabel(' {}'.format(resource.agency_url))
+            self.resource_award_number_input.SetLabel(' {}'.format(resource.award_number))
+            self.resource_award_title_input.SetLabel(' {}'.format(resource.award_title))
+            self.resource_funding_agency_input.SetLabel(' {}'.format(resource.funding_agency))
 
     def _sort_resource_choices(self, event):
         WxHelper.UpdateChoiceControl(self.hs_resource_choice, self._get_destination_resource_choices())
@@ -701,7 +752,7 @@ class VisualH2OWindow(wx.Frame):
         span = 3
         edit_database_button = WxHelper.GetButton(self, self.panel, u'Edit...', on_click=self.on_edit_database)
         self.database_connection_choice = WxHelper.GetChoice(self, self.panel, self._get_database_choices(),
-                                                             on_change=self.on_database_chosen, font=self.MONOSPACE)
+                                                             on_change=self._on_select_odm_database, font=self.MONOSPACE)
         odm_series_sizer.Add(self.create_gui_label(u'Select a database connection'), pos=(row, 0), span=(1, span),
                              flag=wx.ALIGN_LEFT)
         odm_series_sizer.Add(self.database_connection_choice, pos=(row + 1, 0), span=(1, span), flag=ALIGN.LEFT)
@@ -709,16 +760,18 @@ class VisualH2OWindow(wx.Frame):
 
         # File chunking options
         text_flags = wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL
-        self.chunk_by_year_checkbox = WxHelper.GetCheckBox(self, self.panel, u'Chunk files by year')
+        self.chunk_by_year_checkbox = WxHelper.GetCheckBox(self, self.panel, u'Group series by year')
         self.chunk_by_series_checkbox = WxHelper.GetCheckBox(self, self.panel, u'One series per file')
         odm_series_sizer.Add(self.create_gui_label(u'File options:    '), pos=(row + 1, 6), span=(1, 1), flag=text_flags)
         odm_series_sizer.Add(self.chunk_by_series_checkbox, pos=(row + 1, 7), span=(1, 1), flag=text_flags)
         odm_series_sizer.Add(self.chunk_by_year_checkbox, pos=(row + 1, 8), span=(1, 1), flag=text_flags)
 
         # Series selection controls
-        odm_series_sizer.Add(self.create_gui_label(u'Available Series', font=self.MONOSPACE.Bold()), pos=(row + 2, 0), span=(1, 4),
+        odm_series_sizer.Add(self.create_gui_label(u'Available Series', font=self.MONOSPACE.Bold()), pos=(row + 2, 0),
+                             span=(1, 4),
                              flag=wx.ALIGN_CENTER)
-        odm_series_sizer.Add(self.create_gui_label(u'Selected Series', font=self.MONOSPACE.Bold()), pos=(row + 2, 5), span=(1, 4),
+        odm_series_sizer.Add(self.create_gui_label(u'Selected Series', font=self.MONOSPACE.Bold()), pos=(row + 2, 5),
+                             span=(1, 4),
                              flag=wx.ALIGN_CENTER)
 
         grid_x_size = 500
@@ -735,28 +788,38 @@ class VisualH2OWindow(wx.Frame):
         """
         Build action sizer and logging box
         """
-        self.run_script_button = WxHelper.GetButton(self, self.panel, "Run Script", self.on_run_script_clicked)
-        self.stop_script_button = WxHelper.GetButton(self, self.panel, "Stop Script", self.on_stop_script_clicked)
+        self.run_script_button = WxHelper.GetButton(self, self.panel, "Upload Series", self.on_run_script_clicked)
+        self.stop_script_button = WxHelper.GetButton(self, self.panel, "Cancel", self.on_stop_script_clicked)
         self.stop_script_button.Enable(enable=False)
 
         self.status_gauge = wx.Gauge(self.panel, wx.ID_ANY, 100, wx.DefaultPosition, wx.DefaultSize, wx.GA_HORIZONTAL)
         self.status_gauge.SetValue(0)
 
         self.log_message_listbox = WxHelper.GetListBox(self, self.panel, [], size_x=920, size_y=100,
-                                                       font=self.MONOSPACE, on_right_click=self.on_right_click_log_output)
-
-        self.clear_console_button = platebtn.PlateButton(self.panel, label="Clear Console",
-                                                         style=platebtn.PB_STYLE_SQUARE)
+                                                       font=self.MONOSPACE,
+                                                       on_right_click=self.on_right_click_log_output,
+                                                       style=wx.HSCROLL)
 
         self.clear_console_button = WxHelper.GetButton(self, self.panel, "Clear Console",
-                                                       lambda ev: self.log_message_listbox.Clear(),
-                                                       style=platebtn.PB_STYLE_GRADIENT)
+                                                       lambda ev: self.log_message_listbox.Clear())
 
         action_status_sizer.Add(self.status_gauge, pos=(0, 0), span=(1, 8), flag=ALIGN.CENTER)
-        action_status_sizer.Add(self.run_script_button, pos=(0, 9), span=(1, 1), flag=ALIGN.CENTER)
-        action_status_sizer.Add(self.stop_script_button, pos=(0, 8), span=(1, 1), flag=ALIGN.CENTER)
+        action_status_sizer.Add(self.stop_script_button, pos=(0, 9), span=(1, 1), flag=ALIGN.CENTER)
+        action_status_sizer.Add(self.run_script_button, pos=(0, 8), span=(1, 1), flag=ALIGN.CENTER)
         action_status_sizer.Add(self.log_message_listbox, pos=(1, 0), span=(2, 10), flag=ALIGN.CENTER)
         action_status_sizer.Add(self.clear_console_button, pos=(3, 0), span=(1, 1), flag=ALIGN.CENTER)
+
+        self.odmSeriesUIController = UIController(buttons=[
+            edit_database_button,
+            self.add_to_selected_button,
+            self.remove_selected_button,
+            self.run_script_button,
+            self.stop_script_button
+        ],
+            dropdowns=[self.database_connection_choice],
+            checkboxes=[self.chunk_by_series_checkbox, self.chunk_by_year_checkbox],
+            grids=[self.selected_series_grid, self.available_series_grid]
+        )
 
         """
         Build menu bar and setup callbacks
@@ -793,48 +856,51 @@ class VisualH2OWindow(wx.Frame):
         """
         input_font = self.MONOSPACE
         label_font = self.MONOSPACE
-        flags = ALIGN.CENTER
+        # flags = ALIGN.CENTER
+        flags = wx.GROW
         text_flags = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
         border_style = wx.BORDER_THEME
-        # col_base = 4
-        # row_base = 2
 
-        rightSizer = WxHelper.GetGridBagSizer()
-        leftSizer = WxHelper.GetGridBagSizer()
+        gap = (16, 16)
+        rightSizer = wx.GridBagSizer(*gap)
+        leftSizer = wx.GridBagSizer(*gap)
 
         self.hs_resource_choice = WxHelper.GetChoice(self.panel, self.panel, self._get_destination_resource_choices(),
                                                      on_change=self._on_select_resource,
                                                      font=self.MONOSPACE)
 
-        self.invert_resource_choices_checkbox = WxHelper.GetCheckBox(self, self.panel, 'Invert Resource Sorting',
+        self.invert_resource_choices_checkbox = WxHelper.GetCheckBox(self, self.panel, 'Sort A-Z', checked=True,
                                                                      on_change=self._sort_resource_choices)
 
-        sizer.Add(self.create_gui_label(u'Select a resource'), pos=(0, 0), span=(1, 1), flag=ALIGN.CENTER)
-        sizer.Add(self.invert_resource_choices_checkbox, pos=(0, 6), span=(1, 2), flag=text_flags)
-        sizer.Add(self.hs_resource_choice, pos=(1, 0), span=(1, 8), flag=ALIGN.CENTER)
+        sizer.Add(self.create_gui_label('Select a resource'), pos=(0, 0), span=(1, 1), flag=ALIGN.CENTER)
+        sizer.Add(self.hs_resource_choice, pos=(1, 0), span=(1, 9), flag=wx.GROW)
+        sizer.Add(self.invert_resource_choices_checkbox, pos=(1, 9), span=(1, 1),
+                  flag=wx.ALIGN_LEFT|wx.ALIGN_CENTER_VERTICAL)
 
-        sizer.Add(leftSizer, pos=(2, 0), span=(1, 4))
-        sizer.Add(rightSizer, pos=(2, 4), span=(1, 4), flag=ALIGN.CENTER)
-        # sizer.AddGrowableCol(1)
+        resource_row = 2
+        sizer.Add(rightSizer, pos=(resource_row, 0), span=(1, 3), flag=wx.EXPAND)
+        sizer.Add(leftSizer, pos=(resource_row, 3), span=(1, 6), flag=wx.EXPAND)
 
         """
         Elements on the LEFT hand side (and below the resource choice list)
         """
-        self.resource_abstract_label = self.create_gui_label(u'Resource Abstract', font=label_font)
+        self.resource_abstract_label = self.create_gui_label(u'Abstract', font=label_font)
         self.resource_abstract_input = WxHelper.GetTextInput(self.panel, '', wrap_text=True, style=wx.TE_READONLY)
 
         leftSizer.Add(self.resource_abstract_label, pos=(0, 0), span=(1, 1))
-        leftSizer.Add(self.resource_abstract_input, pos=(1, 0), span=(4, 4), flag=ALIGN.CENTER | PADDING.ALL)
+        leftSizer.Add(self.resource_abstract_input, pos=(0, 1), span=(1, 4), flag=wx.GROW|wx.LEFT)#|wx.RIGHT, border=32)
+        leftSizer.AddGrowableCol(1)
+        leftSizer.AddGrowableRow(0)
 
         """
         Elements on the RIGHT hand side (also below the resource choice list)
         """
         # Inputs
-        self.resource_funding_agency_input = WxHelper.GetTextInput(self.panel, '',
-                                                                   style=wx.BORDER_THEME | wx.TE_READONLY)
-        self.resource_agency_website_input = WxHelper.GetLabel(self.panel, '', style=wx.BORDER_THEME)
-        self.resource_award_title_input = WxHelper.GetLabel(self.panel, '', style=wx.BORDER_THEME)
-        self.resource_award_number_input = WxHelper.GetLabel(self.panel, '', style=wx.BORDER_THEME)
+        input_style = wx.TE_READONLY | wx.BORDER_STATIC
+        self.resource_funding_agency_input = WxHelper.GetLabel(self.panel, '', style=input_style)
+        self.resource_agency_website_input = WxHelper.GetLabel(self.panel, '', style=input_style)
+        self.resource_award_title_input = WxHelper.GetLabel(self.panel, '', style=input_style)
+        self.resource_award_number_input = WxHelper.GetLabel(self.panel, '', style=input_style)
 
         # Labels
         fundingAgencyLabel = self.create_gui_label(u'Funding Agency')
@@ -844,65 +910,42 @@ class VisualH2OWindow(wx.Frame):
         resourceManagementLabel = self.create_gui_label(u'Resource Management:')
 
         rightSizer.Add(fundingAgencyLabel, pos=(0, 0), span=(1, 1), flag=text_flags)
-        rightSizer.Add(self.resource_funding_agency_input, pos=(0, 1), span=(1, 3), flag=flags)
+        rightSizer.Add(self.resource_funding_agency_input, pos=(0, 1), span=(1, 2), flag=wx.GROW)#|wx.RIGHT, border=32)
 
         rightSizer.Add(agencyWebsiteLabel, pos=(1, 0), span=(1, 1), flag=text_flags)
-        rightSizer.Add(self.resource_agency_website_input, pos=(1, 1), span=(1, 3), flag=flags)
+        rightSizer.Add(self.resource_agency_website_input, pos=(1, 1), span=(1, 2), flag=wx.GROW)#|wx.RIGHT, border=32)
 
         rightSizer.Add(awardTitleLabel, pos=(2, 0), span=(1, 1), flag=text_flags)
-        rightSizer.Add(self.resource_award_title_input, pos=(2, 1), span=(1, 3), flag=flags)
+        rightSizer.Add(self.resource_award_title_input, pos=(2, 1), span=(1, 2), flag=wx.GROW)#|wx.RIGHT, border=32)
 
         rightSizer.Add(awardNumberLabel, pos=(3, 0), span=(1, 1), flag=text_flags)
-        rightSizer.Add(self.resource_award_number_input, pos=(3, 1), span=(1, 3), flag=flags)
-
+        rightSizer.Add(self.resource_award_number_input, pos=(3, 1), span=(1, 2), flag=wx.GROW)#|wx.RIGHT, border=32)
+        rightSizer.AddGrowableCol(1)
 
         """
         Action Buttons
         """
-        sizer.Add(resourceManagementLabel, pos=(7, 4), span=(1, 1), flag=text_flags)
 
-        self.save_dataset_button = WxHelper.GetButton(self, self.panel, "Apply Changes", self._save_managed_clicked,
-                                                      size_x=100, size_y=30)
+        # self.save_dataset_button = WxHelper.GetButton(self, self.panel, "Apply Changes", self._save_managed_clicked)
 
-        self.clear_dataset_button = WxHelper.GetButton(self, self.panel, "Clear Changes",
-                                                       self._remove_from_managed_clicked, size_x=100, size_y=30,
-                                                       style=0)
+        # self.clear_dataset_button = WxHelper.GetButton(self, self.panel, "Clear Changes",
+        #                                                self._remove_from_managed_clicked)
 
         self.remove_files_button = WxHelper.GetButton(self, self.panel, "Delete Resource Files",
-                                                      self._delete_files_clicked, size_x=150, size_y=30,
-                                                      style=0)
+                                                      self._delete_files_clicked)
 
-        sizer.Add(self.save_dataset_button, pos=(7, 7), span=(1, 1), flag=wx.ALIGN_CENTER)
-        sizer.Add(self.clear_dataset_button, pos=(7, 6), span=(1, 1), flag=wx.ALIGN_CENTER)
-        sizer.Add(self.remove_files_button, pos=(7, 5), span=(1, 1), flag=wx.ALIGN_CENTER)
+        sizer.Add(resourceManagementLabel, pos=(3, 0), span=(1, 1))
+        # sizer.Add(self.save_dataset_button, pos=(4, 0), span=(1, 1), flag=wx.ALIGN_CENTER)
+        # sizer.Add(self.clear_dataset_button, pos=(4, 1), span=(1, 1), flag=wx.ALIGN_CENTER)
+        sizer.Add(self.remove_files_button, pos=(4, 0), span=(1, 1), flag=wx.ALIGN_CENTER)
 
-        # Do some other stuff...
-        self.resource_dropdowns = [
-            self.hs_resource_choice
-        ]
-
-        self.resource_inputs = [
-            self.invert_resource_choices_checkbox,
-            # self.resource_title_input,
-            self.resource_abstract_input,
-            self.resource_funding_agency_input,
-            self.resource_agency_website_input,
-            self.resource_award_title_input,
-            self.resource_award_number_input
-        ]
-
-        self.resource_buttons = [
-            self.save_dataset_button,
-            self.clear_dataset_button,
-            self.remove_files_button
-        ]
-
-    def toggle_resource_UI_elements(self, enable=True):
-        for el in self.resource_dropdowns + self.resource_inputs + self.resource_buttons:
-            if hasattr(el, 'Disable') and not enable:
-                el.Disable()
-            elif hasattr(el, 'Enable') and enable:
-                el.Enable()
+        self.resourceUIController = UIController(inputs=[self.resource_abstract_input,
+                                                         self.resource_funding_agency_input,
+                                                         self.resource_agency_website_input,
+                                                         self.resource_award_title_input,
+                                                         self.resource_award_number_input],
+                                                 buttons=[self.remove_files_button],
+                                                 dropdowns=[self.hs_resource_choice])
 
     def on_right_click_log_output(self, event):
         message = 'Print only important log messages' if APP_SETTINGS.VERBOSE else 'Print all log messages'

@@ -256,8 +256,9 @@ class WxHelper:
         return wx.StaticText(parent, **kwargs)
 
     @staticmethod
-    def GetListBox(app, parent, items, on_right_click=None, size_x=None, size_y=None, font=None, flags=wx.LB_EXTENDED):
-        listbox = wx.ListBox(parent, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, items, flags)
+    def GetListBox(app, parent, items, on_right_click=None, size_x=None, size_y=None, font=None, style=wx.LB_EXTENDED|wx.HSCROLL):
+        # __init__(self, parent=None, id=None, pos=None, size=None, choices=[], style=0, validator=None, name=None)
+        listbox = wx.ListBox(parent, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, items, style)
         if size_x is not None and size_y is not None:
             listbox.SetMinSize(wx.Size(size_x, size_y))
             listbox.SetMaxSize(wx.Size(size_x, size_y))

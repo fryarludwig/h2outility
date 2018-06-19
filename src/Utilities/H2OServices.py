@@ -141,20 +141,28 @@ class H2OService:
                                 print 'Unable to fetch ODM series {} from database {}'.format(h2o_series, db_dame)
                             else:
                                 odm_series_list.append(result_series)
+
                         if resource.chunk_years:
+
                             for year in GetSeriesYearRange(odm_series_list):
                                 self._thread_checkpoint()
+
                                 result_file = BuildCsvFile(series_service, odm_series_list, year, failed_files)
                                 if result_file is not None:
                                     resource.associated_files.append(result_file)
+
                         else:
                             self._thread_checkpoint()
+
                             result_file = BuildCsvFile(series_service, odm_series_list, failed_files=failed_files)
                             if result_file is not None:
                                 resource.associated_files.append(result_file)
+
                         for filename, message in failed_files:
                             self.NotifyVisualH2O('File_Failed', filename, message)
+
                     self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
+
                 except H2OService.StopThreadException as e:
                     print 'Dataset generation stopped: {}'.format(e.message)
                     return
@@ -162,7 +170,9 @@ class H2OService:
                     self.NotifyVisualH2O('Operations_Stopped',
                                          'Exception encountered while generating datasets:\n{}'.format(e))
                     return
+
         print 'Dataset generation completed without error'
+
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 
     def _upload_files(self):
@@ -286,9 +296,10 @@ class H2OService:
         if output_file is None:
             output_file = APP_SETTINGS.SETTINGS_FILE_NAME
         try:
-            json_out = open(output_file, 'w')
-            json_out.write(jsonpickle.encode(self.to_json()))
-            json_out.close()
+            import json
+            with open(output_file, 'w') as fout:
+                fout.write(jsonpickle.encode(self.to_json()))
+
             print('Dataset information successfully saved to {}'.format(output_file))
             return True
         except IOError as e:
@@ -299,14 +310,15 @@ class H2OService:
         if input_file is None:
             input_file = APP_SETTINGS.SETTINGS_FILE_NAME
         try:
-            json_in = open(input_file, 'r')
-            data = jsonpickle.decode(json_in.read())
-            if data is not None:
-                self.HydroShareConnections = data['hydroshare_connections'] if 'hydroshare_connections' in data else {}
-                self.DatabaseConnections = data['odm_connections'] if 'odm_connections' in data else {}
-                self.ResourceTemplates = data['resource_templates'] if 'resource_templates' in data else {}
-                self.ManagedResources = data['managed_resources'] if 'managed_resources' in data else {}
-            json_in.close()
+            with open(input_file, 'r') as fin:
+                data = jsonpickle.decode(fin.read())
+
+                if data is not None:
+                    self.HydroShareConnections = data['hydroshare_connections'] if 'hydroshare_connections' in data else {}
+                    self.DatabaseConnections = data['odm_connections'] if 'odm_connections' in data else {}
+                    self.ResourceTemplates = data['resource_templates'] if 'resource_templates' in data else {}
+                    self.ManagedResources = data['managed_resources'] if 'managed_resources' in data else {}
+
             print 'Dataset information loaded from {}'.format(input_file)
             return True
         except IOError:

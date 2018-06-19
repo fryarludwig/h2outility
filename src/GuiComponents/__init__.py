@@ -1,3 +1,3 @@
 
-__all__ = ['HydroShareAccountDialog', 'VisualH20MainWindow', 'HydroShareUIController']
+__all__ = ['HydroShareAccountDialog', 'VisualH20MainWindow', 'UIController.py']
 

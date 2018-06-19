@@ -1,5 +1,5 @@
 
-class HydroShareUIController:
+class UIController:
     """
     HydroShareController provides controls for hydroshare UI elements
     """
@@ -7,6 +7,8 @@ class HydroShareUIController:
     inputs = []
     buttons = []
     dropdowns = []
+    checkboxes = []
+    grids = []
 
     def __init__(self, **kwargs):
         for key, value in kwargs.iteritems():
@@ -14,7 +16,7 @@ class HydroShareUIController:
 
     @property
     def elements(self):
-        return self.inputs + self.buttons + self.dropdowns
+        return self.inputs + self.buttons + self.dropdowns + self.grids + self.checkboxes
 
     def DisableControls(self):
         """disables inputs and buttons"""
@@ -54,6 +56,12 @@ class HydroShareUIController:
         """enables all elements"""
         self.__enable_elements(self.elements)
 
+    def DisableGrids(self):
+        self.__disable_elements(self.grids)
+
+    def EnableGrids(self):
+        self.__enable_elements(self.grids)
+
     def __disable_elements(self, elements):
         """disables the elements passed into method"""
         for el in elements:
@@ -66,4 +74,4 @@ class HydroShareUIController:
             if hasattr(el, 'Enable'):
                 el.Enable()
 
-# __all__ = ['HydroShareUIController']
+# __all__ = ['UIController']
