@@ -55,6 +55,7 @@ odm_tools_python.sublime-workspace
 setup/Output/setup.exe
 
 .idea
+.vscode
 
 *.uml
 GAMUT_CSV_Files

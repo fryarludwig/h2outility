@@ -1,7 +1,7 @@
 from functools import partial
 
 import wx
-from InputValidator import *
+from GuiComponents.InputValidator import *
 import wx.grid
 
 
@@ -232,18 +232,26 @@ class WxHelper:
         return wx.Size(size_x, size_y)
 
     @staticmethod
-    def GetTextInput(parent, placeholder_text=u'', size_x=None, size_y=None, valid_input=PATTERNS.ANY,
+    def GetTextInput(parent, text=u'', size_x=None, size_y=None, valid_input=PATTERNS.ANY,
                      max_length=None, wrap_text=False, style=7, **kwargs):
+
+        control = wx.TextCtrl
+        if 'static_text' in kwargs:
+            kwargs.pop('static_text')
+            kwargs.update({'label': text})
+            control = wx.StaticText
+        else:
+            kwargs.update({'value': text,
+                           'validator': CharValidator(valid_input)})
+
         if wrap_text:
             style = style | wx.TE_BESTWRAP | wx.TE_MULTILINE
 
-        text_ctrl = wx.TextCtrl(parent, wx.ID_ANY,
-                                value=placeholder_text,
-                                pos=wx.DefaultPosition,
-                                size=wx.DefaultSize,
-                                style=style,
-                                validator=CharValidator(valid_input),
-                                **kwargs)
+        kwargs.update({'pos': wx.DefaultPosition,
+                       'size': wx.DefaultSize,
+                       'style': style})
+
+        text_ctrl = control(parent, wx.ID_ANY, **kwargs)
 
         text_ctrl.SetMinSize(WxHelper.GetWxSize(size_x, size_y))
         text_ctrl.SetMaxSize(WxHelper.GetWxSize(size_x, size_y))
@@ -252,8 +260,8 @@ class WxHelper:
         return text_ctrl
 
     @staticmethod
-    def GetStaticText(parent, **kwargs):
-        return wx.StaticText(parent, **kwargs)
+    def GetStaticText(parent, label, **kwargs):
+        return WxHelper.GetTextInput(parent, label, static_text=True, **kwargs)
 
     @staticmethod
     def GetListBox(app, parent, items, on_right_click=None, size_x=None, size_y=None, font=None, style=wx.LB_EXTENDED|wx.HSCROLL):
@@ -308,6 +316,20 @@ class WxHelper:
         if font is not None:
             label.SetFont(font)
         return label
+
+    @staticmethod
+    def GetHelpLabel(parent, text, **kwargs):
+        font = None
+        if 'font' in kwargs:
+            font = kwargs.pop('font')
+
+        label = wx.Button(parent, wx.ID_HELP, text, **kwargs)
+
+        if font:
+            label.SetFont(font)
+
+        return label
+
 
     @staticmethod
     def AddNewMenuItem(app, menu, label, on_click=None, return_item=False):

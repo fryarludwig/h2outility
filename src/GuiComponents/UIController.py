@@ -11,7 +11,7 @@ class UIController:
     grids = []
 
     def __init__(self, **kwargs):
-        for key, value in kwargs.iteritems():
+        for key, value in kwargs.items():
             setattr(self, key, value)
 
     @property
@@ -24,7 +24,7 @@ class UIController:
 
     def EnableControls(self):
         """enables inputs and buttons"""
-        self.__enable_elements(self.buttons + self.inputs)
+        self.__enable_elements(self.buttons + self.inputs + self.checkboxes)
 
     def DisableInputs(self):
         """disables inputs"""
@@ -73,5 +73,3 @@ class UIController:
         for el in elements:
             if hasattr(el, 'Enable'):
                 el.Enable()
-
-# __all__ = ['UIController']

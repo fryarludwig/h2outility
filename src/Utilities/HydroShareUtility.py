@@ -1,12 +1,14 @@
 import xml.etree.ElementTree as ElementTree
+import os
+import re
+import sys
+import json
 
 import dateutil.parser
 from hs_restclient import HydroShareNotFound, HydroShareAuthBasic, HydroShareAuthOAuth2, HydroShare, HydroShareException
 from oauthlib.oauth2 import InvalidClientError, InvalidGrantError
 
-from Common import *
-
-import json
+from Common import APP_SETTINGS
 
 
 class HydroShareAccountDetails:
@@ -35,6 +37,8 @@ class HydroShareAccountDetails:
                 self.client_id = self.CLIENT_ID
                 self.client_secret = self.CLIENT_SECRET
             except KeyError:
+                # This was the way the previous developer was importing settings. I left it here
+                # but there's no knowing that it will ever work...
                 self.client_id = values['client_id'] if 'client_id' in values else None
                 self.client_secret = values['client_secret'] if 'client_secret' in values else None
 
@@ -57,7 +61,6 @@ class HydroShareResource:
         self.owner = resource_dict['creator'] if 'creator' in resource_dict else ""
         self.title = resource_dict['resource_title'] if 'resource_title' in resource_dict else ""
         self.abstract = ""
-        self.keywords = []
         self.funding_agency = ""
         self.agency_url = ""
         self.award_title = ""
@@ -67,6 +70,11 @@ class HydroShareResource:
         self.period_start = ""
         self.period_end = ""
         self.public = resource_dict['public'] if 'public' in resource_dict else False
+        self.shareable = resource_dict.get('shareable', False)
+
+    @property
+    def keywords(self):
+        return self.subjects
 
     def get_metadata(self):
         metadata = {
@@ -81,7 +89,7 @@ class HydroShareResource:
         }
 
         if APP_SETTINGS.H2O_DEBUG:
-            print metadata
+            print(metadata)
         return metadata
 
     def __str__(self):
@@ -209,7 +217,7 @@ class HydroShareUtility:
         try:
             return list(self.client.getResourceFileList(resource_id))
         except Exception as e:
-            print 'Error while fetching resource files {}'.format(e)
+            print('Error while fetching resource files {}'.format(e))
             return []
 
     def getAllResources(self):
@@ -232,6 +240,7 @@ class HydroShareUtility:
         resource.title = metadata['title'] if 'title' in metadata else ''
         resource.subjects = [item['value'] for item in metadata['subjects']]
         resource.abstract = metadata['description'] if 'description' in metadata else ''
+
         if 'funding_agencies' in metadata and len(metadata['funding_agencies']) > 0:
             funding_agency = metadata['funding_agencies'][0]
             resource.agency_url = funding_agency['agency_url'] if 'agency_url' in funding_agency else ''
@@ -245,6 +254,58 @@ class HydroShareUtility:
         :type resource: HydroShareResource
         """
         return self.client.updateScienceMetadata(resource.id, resource.get_metadata())
+
+    def _request(self, method, url, params=None, data=None, files=None, headers=None, stream=False):
+        request = self.client.session.request(method, url, params=params, data=data, files=files, headers=headers,
+                                              stream=stream)
+
+        return request
+
+    def requestAccessRules(self, resource):
+        """
+        Get access rule for a resource.
+        """
+        url = "{url_base}/resource/{pid}/sysmeta/".format(url_base=self.client.url_base, pid=resource.id)
+
+        r = self._request('GET', url)
+        if r.status_code != 200:
+            raise Exception("Failed to get system metadata for resource: {}".format(resource.id))
+
+        data = r.json()
+        resource.public = data.get('public', False)
+        resource.shareable = data.get('shareable', False)
+
+    def makePublic(self, resource, public=True):
+        """
+        Makes a resource public or private
+        :param resource: The resource you want to modify
+        :param public: boolean value, True makes the resource public, False makes it private (wowzer)
+        :return: None
+        """
+        hs = HydroShare(auth=self.auth)
+        res = hs.resource(resource.id).public(public)
+
+        if res.status_code == 200 or res.status_code == 202:
+            resource.public = public
+
+    def updateKeywords(self, resource, keywords=None):
+        if keywords is None:
+            keywords = resource.keywords
+
+        # remove leading/trailing whitespaces from keywords
+        keywords = map(lambda x: x.strip(), keywords)
+
+        url = "{url_base}/resource/{id}/scimeta/elements/".format(url_base=self.client.url_base, id=resource.id)
+
+        subjects = []
+        for keyword in keywords:
+            subjects.append({"value": keyword})
+
+        r = self.client.session.request('PUT', url, json={"subjects": subjects})
+
+        if r.status_code != 202:
+            raise HydroShareException((url, 'PUT', r.status_code, keywords))
+        return r.json()
 
     def getFileListForResource(self, resource):
         resource.files = [os.path.basename(f['url']) for f in self.getResourceFileList(resource.id)]
@@ -306,12 +367,12 @@ class HydroShareUtility:
             raise HydroShareUtilityException("Cannot modify resources without authentication")
         for resource_id in resource_ids:
             try:
-                print 'Setting resource {} as public'.format(resource_id)
+                print('Setting resource {} as public'.format(resource_id))
                 self.client.setAccessRules(resource_id, public=True)
             except HydroShareException as e:
-                print "Access rule edit failed - could not set to public due to exception: {}".format(e)
+                print("Access rule edit failed - could not set to public due to exception: {}".format(e))
             except KeyError as e:
-                print 'Incorrectly formatted arguments given. Expected key not found: {}'.format(e)
+                print('Incorrectly formatted arguments given. Expected key not found: {}'.format(e))
 
     def deleteFilesInResource(self, resource_id):
         if self.auth is None:
@@ -319,10 +380,10 @@ class HydroShareUtility:
         try:
             file_list = self.getResourceFileList(resource_id)
             for file_info in file_list:
-                print 'Deleting resource file: {}'.format(os.path.basename(file_info['url']))
+                print('Deleting resource file: {}'.format(os.path.basename(file_info['url'])))
                 self.client.deleteResourceFile(resource_id, os.path.basename(file_info['url']))
         except Exception as e:
-            print 'Could not delete files in resource {}\n{}'.format(resource_id, e)
+            print('Could not delete files in resource {}\n{}'.format(resource_id, e))
 
     def getResourceCoveragePeriod(self, resource_id):
         metadata = self.client.getScienceMetadata(resource_id)
@@ -339,7 +400,7 @@ class HydroShareUtility:
                 period_start = dateutil.parser.parse(match.group('start'))
                 period_end = dateutil.parser.parse(match.group('end'))
         except Exception as e:
-            print("Unable to find coverage data - encountered exception {}".format(e.message))
+            print("Unable to find coverage data - encountered exception {}".format(e))
         return period_start, period_end
 
     def deleteResource(self, resource_id, confirm=True):
@@ -350,10 +411,10 @@ class HydroShareUtility:
                 user_input = raw_input('Are you sure you want to delete the resource {}? (y/N): '.format(resource_id))
                 if user_input.lower() != 'y':
                     return
-            print 'Deleting resource {}'.format(resource_id)
+            print('Deleting resource {}'.format(resource_id))
             self.client.deleteResource(resource_id)
         except Exception as e:
-            print 'Exception encountered while deleting resource {}: {}'.format(resource_id, e)
+            print('Exception encountered while deleting resource {}: {}'.format(resource_id, e))
 
     def createNewResource(self, resource):
         """
@@ -364,12 +425,24 @@ class HydroShareUtility:
         :rtype: str
         """
         if self.auth is None:
-            raise HydroShareUtilityException("Cannot modify resources without authentication")
+            raise HydroShareUtilityException("Cannot create resource without authentication")
 
         # http://hs-restclient.readthedocs.io/en/latest/
         if resource is not None:
-            resource_id = self.client.createResource(resource_type='CompositeResource', title=resource.title,
-                                                     abstract=resource.abstract)  # , metadata=resource.get_metadata())
+
+            metadata = [{'fundingagency': {
+                    'agency_name': resource.funding_agency,
+                    'award_title': resource.award_title,
+                    'award_number': resource.award_number,
+                    'agency_url': resource.agency_url
+                }
+            }]
+
+            resource_id = self.client.createResource(resource_type='CompositeResource',
+                                                     title=resource.title,
+                                                     abstract=resource.abstract,
+                                                     keywords=list(resource.keywords),
+                                                     metadata=json.dumps(metadata, encoding='ascii'))
             hs_resource = HydroShareResource({'resource_id': resource_id})
             self.getMetadataForResource(hs_resource)
             return hs_resource

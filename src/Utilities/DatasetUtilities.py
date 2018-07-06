@@ -53,6 +53,9 @@ class H2OManagedResource:
                 'single_file': self.single_file, 'chunk_years': self.chunk_years,
                 'odm_db_name': self.odm_db_name, 'associated_files': self.associated_files}
 
+    def to_dict(self):
+        return self.__dict__()
+
     def __str__(self):
         if self.resource is not None:
             return 'Managed resource {} with {} series'.format(self.resource.title, len(self.selected_series))
@@ -100,7 +103,7 @@ class OdmDatasetConnection:
             sleep(2)
             result = queue.get(True, 8)
         except Exception as exc:
-            print exc
+            print(exc)
 
         if process.is_alive():
             process.terminate()
@@ -117,7 +120,7 @@ DELIMITER = '# {}'.format('-' * 90)
 
 def createFile(filepath):
     try:
-        print 'Creating new file {}'.format(filepath)
+        print('Creating new file {}'.format(filepath))
         return open(filepath, 'w')
     except Exception as e:
         print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
@@ -162,7 +165,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
     # type: (SeriesService, list[Series], int, list[tuple(str)]) -> str
     try:
         if len(series_list) == 0:
-            print 'Cannot generate a file for no series'
+            print('Cannot generate a file for no series')
             return None
         variables = set([series.variable_id for series in series_list if series is not None])
         methods = set([series.method_id for series in series_list if series is not None])
@@ -171,14 +174,14 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
         source_ids = set([series.source_id for series in series_list if series is not None])
 
         if len(qc_ids) == 0 or len(site_ids) == 0 or len(source_ids) == 0:
-            print 'Series provided are empty or invalid'
+            print('Series provided are empty or invalid')
         elif len(qc_ids) > 1 or len(site_ids) > 1 or len(source_ids) > 1:
-            print 'Cannot create a file that contains multiple QC, Site, or Source IDs'
-            print '{}: {}'.format(varname(qc_ids), qc_ids)
-            print '{}: {}'.format(varname(site_ids), site_ids)
-            print '{}: {}\n'.format(varname(source_ids), source_ids)
+            print('Cannot create a file that contains multiple QC, Site, or Source IDs')
+            print('{}: {}'.format(varname(qc_ids), qc_ids))
+            print('{}: {}'.format(varname(site_ids), site_ids))
+            print('{}: {}\n'.format(varname(source_ids), source_ids))
         elif len(variables) == 0 or len(methods) == 0:
-            print 'Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods))
+            print('Cannot generate series with no {}'.format(varname(variables if len(variables) == 0 else methods)))
         else:
             try:
                 site = series_list[0].site  # type: Site
@@ -205,11 +208,11 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
 
             if APP_SETTINGS.VERBOSE:
                 stopwatch_timer = datetime.datetime.now()
-                print 'Querying values for file {}'.format(file_name)
+                print('Querying values for file {}'.format(file_name))
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods,
                                                variables, csv_end_datetime, year)
             if APP_SETTINGS.VERBOSE:
-                print 'Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer)
+                print('Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer))
             if dataframe is not None:
                 if csv_end_datetime is None:
                     dataframe.sort_index(inplace=True)
@@ -217,26 +220,26 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                     if WriteSeriesToFile(file_name, dataframe, headers):
                         return file_name
                     else:
-                        print 'Unable to write series to file {}'.format(file_name)
+                        print('Unable to write series to file {}'.format(file_name))
                         failed_files.append((file_name, 'Unable to write series to file'))
                 else:
                     if AppendSeriesToFile(file_name, dataframe):
                         return file_name
                     else:
-                        print 'Unable to append series to file {}'.format(file_name)
+                        print('Unable to append series to file {}'.format(file_name))
                         failed_files.append((file_name, 'Unable to append series to file'))
             elif APP_SETTINGS.SKIP_QUERIES:
                 headers = BuildSeriesFileHeader(series_list, site, source)
                 if WriteSeriesToFile(file_name, dataframe, headers):
                     return file_name
             elif dataframe is None and csv_end_datetime is not None:
-                print 'File exists but there are no new data values to write'
+                print('File exists but there are no new data values to write')
                 # return file_name
             else:
-                print 'No data values exist for this dataset'
+                print('No data values exist for this dataset')
                 failed_files.append((file_name, 'No data values found for file'))
     except TypeError as e:
-        print 'Exception encountered while building a csv file: {}'.format(e)
+        print('Exception encountered while building a csv file: {}'.format(e))
     return None
 
 
@@ -409,6 +412,7 @@ class SourceInfo:
     def sourceOutHelper(self, title, value):
         if isinstance(title, unicode):
             title = title.encode('utf-8').strip()
+
         if isinstance(value, unicode):
             value = value.encode('utf-8').strip()
         return '# {}: {} \n'.format(title, value)

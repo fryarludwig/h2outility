@@ -208,7 +208,7 @@ class DatabaseConnectionDialog(wx.Dialog):
         self.connection_name_input.SetValue(new_name)
 
     def on_test_connection_clicked(self, event):
-        print "Test connection clicked!"
+        print("Test connection clicked!")
         pub.sendMessage("db_auth_test", result=self._get_input_as_dict())
 
     def on_remove_connection_clicked(self, event):
@@ -220,11 +220,11 @@ class DatabaseConnectionDialog(wx.Dialog):
             self.on_selection_changed()
 
     def on_cancel_clicked(self, event):
-        print "Cancel connection clicked!"
+        print("Cancel connection clicked!")
         self.EndModal(True)
 
     def on_save_connection_clicked(self, event):
-        print "Save connection clicked!"
+        print("Save connection clicked!")
         details = self._get_input_as_dict()
         pub.sendMessage("db_auth_save", result=details)
 
