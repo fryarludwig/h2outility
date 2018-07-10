@@ -12,6 +12,8 @@ import wx.grid
 from wx.lib.pubsub import pub
 # from pubsub import pub
 
+from hs_restclient import HydroShareException
+
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate, \
     HydroShareResource
 from Common import *
@@ -73,6 +75,7 @@ class VisualH2OWindow(wx.Frame):
         self.h2o_series_dict = {}  # type: dict[str, H2OSeries]
 
         self._resources = None  # type: dict[str, HydroShareResource]
+        self.clean_resource = None
 
         # Widgets
         self.status_gauge = None  # type: wx.Gauge
@@ -169,15 +172,30 @@ class VisualH2OWindow(wx.Frame):
 
         if result is None:
             return
-        template = ResourceTemplate(result)
-        if template is not None:
-            resource = self.H2OService.CreateResourceFromTemplate(template)
-            self._resources[resource.id] = resource
-            self.hs_resource_choice.Append(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
-            self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
-            self.populate_resource_fields(resource)
 
-            self.resourceUIController.EnableControls()
+        template = ResourceTemplate(result)
+        resource = None
+        if template is not None:
+            try:
+                resource = self.H2OService.CreateResourceFromTemplate(template)
+            except HydroShareException as e:
+
+                msg = 'Request could not complete.'
+                if e.status_code == 400:
+                    msg += "\n\nError 400: Bad request. Please check for errors in the Create Resource form."
+                else:
+                    msg += "\n\n{}".format(e.message)
+
+                wx.MessageBox(msg, caption='Error', parent=self.panel)
+
+            if resource:
+
+                self._resources[resource.id] = resource
+                self.hs_resource_choice.Append(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
+                self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
+                self.populate_resource_fields(resource)
+
+                self.resourceUIController.EnableControls()
 
         else:
             self.populate_resource_fields(None)
@@ -226,7 +244,7 @@ class VisualH2OWindow(wx.Frame):
             return
         account = HydroShareAccountDetails(result)
         self.H2OService.HydroShareConnections.pop(result['selector'], None)
-        self.H2OService.HydroShareConnections[account.name] = account
+        self.H2OService.HydroShareConnections[account.username] = account
         self.update_choice_controls()
         self.H2OService.SaveData()
 
@@ -243,7 +261,7 @@ class VisualH2OWindow(wx.Frame):
             pub.sendMessage('hs_auth_test_reply', reply='Authentication details were not accepted')
         print(result)
 
-    def _get_selected_resource(self):
+    def _get_selected_resource(self):  # type: (None) -> HydroShareResource
         resource = None
         re_match = OdmSeriesHelper.RE_RESOURCE_PARSER.match(self.hs_resource_choice.GetStringSelection())
         if re_match is not None and 'title' in re_match.groupdict() and 'id' in re_match.groupdict():
@@ -262,7 +280,7 @@ class VisualH2OWindow(wx.Frame):
 
     def _get_hydroshare_choices(self):
         if len(self.H2OService.HydroShareConnections) > 0:
-            return ['Select an account'] + [account for account in self.H2OService.HydroShareConnections.keys()]
+            return ['Select an account'] + [account.username for _, account in self.H2OService.HydroShareConnections.iteritems()]
         else:
             return ['No saved accounts']
 
@@ -341,7 +359,19 @@ class VisualH2OWindow(wx.Frame):
                 self.odm_series_dict[series.id] = series
             self.reset_series_in_grid()
 
+            # Re-enable controls for ODM series UI elements
             self.odmSeriesUIController.Enable()
+
+            # Set the current managed resource's connection to the newly selected database connection
+            resource = self._get_selected_resource()
+            mnged_resource = self.H2OService.ManagedResources.get(resource.id, None)
+
+            current_db = self.database_connection_choice.GetStringSelection()
+
+            if mnged_resource and mnged_resource.odm_db_name != current_db:
+                mnged_resource.odm_db_name = current_db
+
+            self.H2OService.SaveData()
 
         else:
             self.odmSeriesUIController.DisableGrids()
@@ -413,10 +443,16 @@ class VisualH2OWindow(wx.Frame):
         self.selected_series_grid.InsertSeriesList(series_list, do_sort=True)
         self.available_series_grid.RemoveSelectedRows()
 
+        mngres = self.get_managed_resource()
+        mngres.selected_series = self.get_selected_series()
+
     def _move_from_selected_series(self, event):
         series_list = [self.odm_series_dict[series_id] for series_id in self.selected_series_grid.GetSelectedSeries()]
         self.available_series_grid.InsertSeriesList(series_list, do_sort=True)
         self.selected_series_grid.RemoveSelectedRows()
+
+        mngres = self.get_managed_resource()
+        mngres.selected_series = self.get_selected_series()
 
     def _get_current_series_ids_from_resource(self, resource):
         if isinstance(resource, H2OManagedResource):
@@ -451,14 +487,28 @@ class VisualH2OWindow(wx.Frame):
 
         message = 'Do you want to delete all files currently in HydroShare resource "{}"? This action cannot ' \
                   'be undone.'.format(resource.title)
+
         confim_dialog = WxHelper.ModalConfirm(self, message, 'Delete HydroShare resource files')
+
         if confim_dialog.ShowModal() == wx.ID_YES:
-            print 'Deleting files!'
-            self.H2OService.ActiveHydroshare.deleteFilesInResource(resource.id)
+
+            busy_cursor = wx.BusyCursor()
+            busy_info = wx.BusyInfo("Deleting resource files...", parent=self.panel)
+
+            self.H2OService.ActiveHydroshare.deleteFilesInResource(resource)
+
+            managed_resource = self.H2OService.ManagedResources.get(resource.id, None)  # type: H2OManagedResource
+            if managed_resource:
+                managed_resource.associated_files = []
+                self.H2OService.SaveData()
+
         else:
             print 'File delete canceled'
 
     def _save_managed_clicked(self, event):
+
+        resource = self._get_selected_resource()
+        mngd_res = self.H2OService.ManagedResources.get(resource.id, None)
 
         if not self._verify_dataset_selections():
             if len(self.selected_series_grid.GetSeries()):
@@ -476,7 +526,7 @@ class VisualH2OWindow(wx.Frame):
             if series_id in self.h2o_series_dict:
                 series[series_id] = self.h2o_series_dict[series_id]
 
-        resource = self._get_selected_resource()  # type: HydroShareResource
+        # resource = self._get_selected_resource()  # type: HydroShareResource
         if resource is None:
             self.on_log_print('Resource not selected, cannot save changes.')
             return
@@ -494,18 +544,26 @@ class VisualH2OWindow(wx.Frame):
         if series is None:
             series = dict()
 
+        db_choice = self.database_connection_choice.GetStringSelection() or ''
+        if db_choice.lower() in ['no saved connections', 'select a connection']:
+            db_choice = None
+
+        if db_choice is None and hasattr(resource, 'odm_db_name'):
+            db_choice = resource.odm_db_name
+
         if resource.id in self.H2OService.ManagedResources:
             managed = self.H2OService.ManagedResources[resource.id]
             managed.selected_series = series
             managed.single_file = not self.chunk_by_series_checkbox.IsChecked()
             managed.chunk_years = self.chunk_by_year_checkbox.IsChecked()
             managed.resource_id = resource.id
+            managed.odm_db_name = db_choice
         else:
             managed = H2OManagedResource(resource=resource,
                                          odm_series=series,
                                          resource_id=resource.id,
                                          hs_account_name=self.hydroshare_account_choice.GetStringSelection(),
-                                         odm_db_name=self.database_connection_choice.GetStringSelection(),
+                                         odm_db_name=db_choice,
                                          single_file=not self.chunk_by_series_checkbox.IsChecked(),
                                          chunk_years=self.chunk_by_year_checkbox.Value,
                                          associated_files=[])
@@ -521,8 +579,6 @@ class VisualH2OWindow(wx.Frame):
             self.on_log_print('Invalid options - please select the ODM series you would like to add to the dataset')
         elif self.hydroshare_account_choice.GetSelection() == 0:
             self.on_log_print('Invalid options - please select a HydroShare account to use')
-        # elif len(self.resource_title_input.Value) == 0:
-        #     self.on_log_print('Invalid options - please enter a resource name')
         else:
             return True
         return False
@@ -532,19 +588,26 @@ class VisualH2OWindow(wx.Frame):
                                                 create_selected=create_resource).ShowModal()
 
     def on_run_script_clicked(self, event):
-        self.on_log_print('Running script')
-        self.run_script_button.Enable(enable=False)
-        self.stop_script_button.Enable(enable=True)
-
+        """
+        Starts the file upload process given the user has selected series to be uploaded for the
+        currently selected resource
+        """
         self._save_managed_clicked(event)
 
-        # self.H2OService.SaveData()
-        # self.H2OService.LoadData()
+        data = self.H2OService.LoadData()
+        managed_resources = data.get('managed_resources', {})
+        mngd_resource = managed_resources.get(self._get_selected_resource().id, None)
 
-        try:
-            self.H2OService.StartOperations()
-        except Exception as e:
-            self.on_log_print(e.message)
+        if mngd_resource and len(mngd_resource.selected_series):
+            # Only run if the managed resource has selected series
+            self.on_log_print('Running script')
+            self.run_script_button.Enable(enable=False)
+            self.stop_script_button.Enable(enable=True)
+
+            try:
+                self.H2OService.StartOperations()
+            except Exception as e:
+                self.on_log_print(e.message)
 
     def on_stop_script_clicked(self, event):
         self.on_log_print('Stopping the script... this may take a while.')
@@ -577,18 +640,16 @@ class VisualH2OWindow(wx.Frame):
         self.reset_series_in_grid()
         self.save_resource_to_managed_resources(resource)
 
-
         self.on_log_print('Fetching information for resource {}'.format(resource.title))
 
         if managed_resource is not None:
 
-            if managed_resource.odm_db_name != self.database_connection_choice.GetStringSelection():
-                if managed_resource.odm_db_name in self.H2OService.DatabaseConnections:
-                    self.database_connection_choice.SetStringSelection(managed_resource.odm_db_name)
-                    self.set_odm_connection(self.H2OService.DatabaseConnections[managed_resource.odm_db_name])
-                else:
-                    self.on_log_print('Error loading ODM series: Unknown connection {}'.format(managed_resource.odm_db_name))
-                    return
+            if managed_resource.odm_db_name in self.H2OService.DatabaseConnections:
+                self.database_connection_choice.SetStringSelection(managed_resource.odm_db_name)
+                self.set_odm_connection(self.H2OService.DatabaseConnections[managed_resource.odm_db_name])
+            else:
+                self.on_log_print('Error loading ODM series: Unknown connection "{}"'.format(managed_resource.odm_db_name))
+                return
 
             self.reset_series_in_grid()
             matches = self._get_current_series_ids_from_resource(managed_resource)
@@ -905,6 +966,8 @@ class VisualH2OWindow(wx.Frame):
         self.resource_abstract_label = self.create_gui_label(u'Abstract', font=label_font)
         self.resource_abstract_input = WxHelper.GetTextInput(self.panel, '', wrap_text=True,
                                                              style=wx.BORDER_STATIC | wx.TE_READONLY)
+        # added a background color to help make the abstract appear uneditable
+        self.resource_abstract_input.SetBackgroundColour(wx.Colour(245, 245, 245))
 
         # These two lines of code are to make the abstract appear non-editable (because it isn't).
         # Binding to wx.EVT_SET_FOCUS makes it so the cursor doesn't appear when clicking inside
@@ -1042,6 +1105,11 @@ class VisualH2OWindow(wx.Frame):
         self.update_resource.Enable(is_dirty)
 
     def is_dirty_sharing_status(self):
+
+        if self.clean_resource is None:
+            # The resource has not been created, so carry on!
+            return True
+
         pub_to_priv = self.clean_resource.public and self.is_public_checkbox.GetValue()
         priv_to_pub = not self.clean_resource.public and self.is_private_checkbox.GetValue()
         return not (pub_to_priv or priv_to_pub)
@@ -1145,3 +1213,17 @@ class VisualH2OWindow(wx.Frame):
         if flags is None:
             flags = WxHelper.GetFlags()
         parent.Add(child, flag=flags, border=border)
+
+    def get_managed_resource(self):  # type: (None) -> H2OManagedResource
+        """
+        :return: The currently selected managed resource
+        """
+        res = self._get_selected_resource()
+        return self.H2OService.ManagedResources.get(res.id, None)  # type: H2OManagedResource
+
+    def get_selected_series(self):  # type: (None) -> dict(H2OSeries)
+        series = {}
+        for series_id in self.selected_series_grid.GetSeries():
+            if series_id in self.h2o_series_dict:
+                series[series_id] = self.h2o_series_dict[series_id]
+        return series

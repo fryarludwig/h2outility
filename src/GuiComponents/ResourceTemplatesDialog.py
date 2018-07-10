@@ -10,15 +10,27 @@ from wx.lib.pubsub import pub
 # from pubsub import pub
 from InputValidator import *
 
+from urlparse import urlparse
+import re
+
 
 # noinspection PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,
 # PyPropertyAccess
 # noinspection PyPropertyAccess,PyPropertyAccess,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class HydroShareResourceTemplateDialog(wx.Dialog):
     def __init__(self, parent, templates, selected=0, create_selected=False):
+
         title = u'Create a new HydroShare Resource' if create_selected else u"Manage HydroShare Resource Templates"
-        wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=title, pos=wx.DefaultPosition,
+
+        self.dialog = wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=title, pos=wx.DefaultPosition,
                            size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
+
+        self.urlregex = re.compile(
+            r'^(?:http|ftp)s?://'
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+
         self.templates = templates
         self.create_new = create_selected
         self.SetSizeHints(wx.DefaultSize, wx.DefaultSize)
@@ -238,8 +250,48 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         event.Skip()
 
     def on_create_clicked(self, event):
-        pub.sendMessage("hs_resource_create", result=self._get_input_as_dict())
-        self.EndModal(True)
+
+        result = self._get_input_as_dict()
+        agwebsite_initial = agwebsite = result.get('agency_url', '')
+
+        error_list = []
+
+        # Make sure the resource has a name
+        if not len(result.get('resource_name', '')):
+            error_list.append("The 'Resource Name' field is required.")
+
+        # If the user did not include a scheme for the agency website, use 'http://' as the default
+        if not re.match(r'https?://', agwebsite):
+            agwebsite = 'http://' + agwebsite
+
+        # If `agwebsite` passes the url pattern check, continue on, otherwise
+        # show some sort of validation error
+        if agwebsite_initial != '' and not self.urlregex.match(agwebsite):
+            error_list.append(
+                "Agency Website '{}' is an invalid URL.\n\nEnter a valid URL to continue.".format(agwebsite_initial)
+            )
+
+
+        if not len(error_list):
+
+            pub.sendMessage("hs_resource_create", result=result)
+
+            self.EndModal(True)
+
+        else:
+            if len(error_list) > 1:
+                msg = "Please fix the following errors"
+
+                for err in error_list:
+                    msg += "\n\n - {}".format(err)
+
+
+            else:
+                msg = "Error: {}".format(error_list[0])
+
+            wx.MessageBox(msg, parent=self.dialog, caption='Error', style=wx.OK)
+
+
         event.Skip()
 
     def on_selection_changed(self, event=None):

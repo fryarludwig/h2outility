@@ -26,16 +26,26 @@ class Common:
         """
         General constants and non-class variables
         """
-        settings_file = 'operations_file.json'                                  # Default settings file name
-        for item in args:
-            if '--settings_file=' in item:
-                settings_file = item.split('--settings_file=')[1]
+        op_file = 'operations_file.json'                                  # Default settings file name
+        if any("--settings_file" in item for item in args):
+
+            op_fpath = [item for item in args if '--settings_file' in item][0] or ''
+            op_fpath = os.path.abspath(op_fpath.split('--settings_file=')[1])
+
+            if not os.path.isfile(op_fpath):
+                raise IOError(
+                    "Operations file not found using --settings_file={}. Make sure the file exists and the filepath has been entered correctly.".format(
+                        op_fpath))
+
+            self.SETTINGS_FILE_NAME = op_fpath
+
+        else:
+            self.SETTINGS_FILE_NAME = self.USER_APP_DIR + '/' + op_file        # Settings file name
 
         self.IS_WINDOWS = 'nt' in os.name
         self.APP_LOCAL = os.getenv('LOCALAPPDATA')
         self.PROJECT_DIR = str(os.path.dirname(os.path.realpath(__file__)))      # Root project directory
         self.USER_APP_DIR = '{}/h2o_utility'.format(self.APP_LOCAL)
-        self.SETTINGS_FILE_NAME = self.USER_APP_DIR + '/' + settings_file        # Settings file name
         self.DATASET_DIR = '{}/H2O_dataset_files/'.format(self.USER_APP_DIR)     # Directory for generated CSV files
         self.LOGFILE_DIR = '{}/logs/'.format(self.USER_APP_DIR)                  # Directory for log files
         self.GUI_MODE = False                                                    # If true, send logs to GUI

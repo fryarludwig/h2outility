@@ -237,9 +237,12 @@ class HydroShareUtility:
         :type resource: HydroShareResource
         """
         metadata = self.client.getScienceMetadata(resource.id)
-        resource.title = metadata['title'] if 'title' in metadata else ''
-        resource.subjects = [item['value'] for item in metadata['subjects']]
-        resource.abstract = metadata['description'] if 'description' in metadata else ''
+        resource.title = metadata.get('title', '')
+        resource.subjects = [item['value'] for item in metadata.get('subjects', [])]
+        resource.abstract = metadata.get('description', '')
+
+        if resource.abstract is None:
+            resource.abstract = ''
 
         if 'funding_agencies' in metadata and len(metadata['funding_agencies']) > 0:
             funding_agency = metadata['funding_agencies'][0]
@@ -374,16 +377,17 @@ class HydroShareUtility:
             except KeyError as e:
                 print('Incorrectly formatted arguments given. Expected key not found: {}'.format(e))
 
-    def deleteFilesInResource(self, resource_id):
+    def deleteFilesInResource(self, resource):
         if self.auth is None:
             raise HydroShareUtilityException("Cannot modify resources without authentication")
+
         try:
-            file_list = self.getResourceFileList(resource_id)
+            file_list = self.getResourceFileList(resource.id)
             for file_info in file_list:
                 print('Deleting resource file: {}'.format(os.path.basename(file_info['url'])))
-                self.client.deleteResourceFile(resource_id, os.path.basename(file_info['url']))
+                self.client.deleteResourceFile(resource.id, os.path.basename(file_info['url']))
         except Exception as e:
-            print('Could not delete files in resource {}\n{}'.format(resource_id, e))
+            print('Could not delete files in resource {}\n{}'.format(resource.id, e))
 
     def getResourceCoveragePeriod(self, resource_id):
         metadata = self.client.getScienceMetadata(resource_id)
@@ -430,13 +434,26 @@ class HydroShareUtility:
         # http://hs-restclient.readthedocs.io/en/latest/
         if resource is not None:
 
-            metadata = [{'fundingagency': {
-                    'agency_name': resource.funding_agency,
-                    'award_title': resource.award_title,
-                    'award_number': resource.award_number,
-                    'agency_url': resource.agency_url
-                }
-            }]
+            metadata = []
+
+            fundingagency = {}
+            agency_attrs = ('funding_agency', 'award_title', 'award_number', 'agency_url')
+
+            for attr in agency_attrs:
+                value = getattr(resource, attr)
+                if len(value):
+                    fundingagency[attr] = value
+
+            if len(fundingagency.keys()):
+                metadata.append({'fundingagency': fundingagency})
+
+            # metadata = [{'fundingagency': {
+            #         'agency_name': resource.funding_agency,
+            #         'award_title': resource.award_title,
+            #         'award_number': resource.award_number,
+            #         'agency_url': resource.agency_url
+            #     }
+            # }]
 
             resource_id = self.client.createResource(resource_type='CompositeResource',
                                                      title=resource.title,

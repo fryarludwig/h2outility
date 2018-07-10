@@ -7,6 +7,7 @@ import wx
 from GuiComponents.VisualH2OMainWindow import VisualH2OWindow
 from Common import *
 
+
 __title__ = 'Visual H20 Utility'
 
 

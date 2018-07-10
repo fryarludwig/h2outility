@@ -104,8 +104,12 @@ class H2OService:
 
         database_resource_dict = {}
         for resource in self.ManagedResources.itervalues():
-            if resource.odm_db_name not in database_resource_dict.keys():
+            if resource.odm_db_name.lower() == 'no saved connections':
+                continue
+
+            if resource.odm_db_name not in database_resource_dict:
                 database_resource_dict[resource.odm_db_name] = []
+
             database_resource_dict[resource.odm_db_name].append(resource)
 
         for db_dame in database_resource_dict.keys():
@@ -169,13 +173,15 @@ class H2OService:
 
                     self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
 
+                    return dataset_count
+
                 except H2OService.StopThreadException as e:
                     print('Dataset generation stopped: {}'.format(e))
-                    return
+                    return 0
                 except Exception as e:
                     self.NotifyVisualH2O('Operations_Stopped',
                                          'Exception encountered while generating datasets:\n{}'.format(e))
-                    return
+                    return 0
 
         print('Dataset generation completed without error')
 
@@ -188,9 +194,16 @@ class H2OService:
 
         for resource in self.ManagedResources.values():
             self._thread_checkpoint()
+
             if APP_SETTINGS.SKIP_HYDROSHARE:
                 continue
+
+            if not len(resource.associated_files):
+                # If there are no files to upload, continue
+                continue
+
             print('Uploading files to resource {}'.format(resource.resource.title))
+
             try:
                 if self.ActiveHydroshare is None or 'None' != resource.hs_account_name:
                     print('Connecting to HydroShare account {}'.format(resource.hs_account_name))
@@ -203,18 +216,28 @@ class H2OService:
                         print(res_file)
 
                 self._thread_checkpoint()
+
                 response = self.ActiveHydroshare.updateResourceMetadata(resource.resource)
+
                 if APP_SETTINGS.VERBOSE and APP_SETTINGS.H2O_DEBUG:
                     print(response)
+
                 self._thread_checkpoint()
+
                 if APP_SETTINGS.DELETE_RESOURCE_FILES:
                     self.ActiveHydroshare.deleteFilesInResource(resource.resource_id)
+
                 self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
+
                 if APP_SETTINGS.SET_RESOURCES_PUBLIC:
                     self.ActiveHydroshare.setResourcesAsPublic([resource.resource_id])
+
                 resource_names.append(resource.resource.title)
+
                 current_dataset += 1
+
                 self.NotifyVisualH2O('Files_Uploaded', resource.resource.title, current_dataset, dataset_count)
+
             except H2OService.StopThreadException as e:
                 print('File upload stopped: {}'.format(e))
                 break
@@ -263,10 +286,14 @@ class H2OService:
     def _threaded_operations(self):
         try:
             print('Starting CSV file generation')
-            self._generate_datasets()
-            print('\nStarting CSV file upload')
-            self._upload_files()
-            self.NotifyVisualH2O('Operations_Stopped', 'Script completed successfully')
+            dataset_count = self._generate_datasets()
+
+            # If the dataset count is not 0, attempt to upload the files.
+            if dataset_count:
+                print('\nStarting CSV file upload')
+                self._upload_files()
+                self.NotifyVisualH2O('Operations_Stopped', 'Script completed successfully')
+
         except H2OService.StopThreadException as e:
             print('File generation and uploads stopped: {}'.format(e))
             self.NotifyVisualH2O('Operations_Stopped', 'Script stopped by user')
@@ -302,8 +329,10 @@ class H2OService:
             output_file = APP_SETTINGS.SETTINGS_FILE_NAME
         try:
 
+            data = jsonpickle.encode(self.to_json())
+
             with open(output_file, 'w') as fout:
-                fout.write(jsonpickle.encode(self.to_json()))
+                fout.write(data)
 
             print('Dataset information successfully saved to {}'.format(output_file))
             return True
@@ -326,21 +355,23 @@ class H2OService:
                     self.ManagedResources = data.get('managed_resources', {})
 
             print('Dataset information loaded from {}'.format(input_file))
-            return True
+
+            return data
+
         except IOError:
             json_out = open(input_file, 'w')
             json_out.write(jsonpickle.encode(self.to_json()))
             json_out.close()
             print('Settings file does not exist - creating: {}'.format(input_file))
-            return False
+            return None
 
     def CreateResourceFromTemplate(self, template):
         """
         :type template: ResourceTemplate
         """
         print('Creating resource {}'.format(template))
-        resource = self.ActiveHydroshare.createNewResource(template)
-        return resource
+
+        return self.ActiveHydroshare.createNewResource(template)
 
 class H2OLogger:
     def __init__(self, logfile_dir=None, log_to_gui=False):
