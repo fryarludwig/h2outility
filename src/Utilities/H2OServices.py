@@ -329,7 +329,10 @@ class H2OService:
             output_file = APP_SETTINGS.SETTINGS_FILE_NAME
         try:
 
+            import json
+
             data = jsonpickle.encode(self.to_json())
+            jsondata = json.loads(data)
 
             with open(output_file, 'w') as fout:
                 fout.write(data)

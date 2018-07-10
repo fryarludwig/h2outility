@@ -540,16 +540,13 @@ class VisualH2OWindow(wx.Frame):
 
         self.save_resource_to_managed_resources(resource, series=series)
 
-    def save_resource_to_managed_resources(self, resource, series=None):
+    def save_resource_to_managed_resources(self, resource, series=None):  # type: (HydroShareResource, any) -> None
         if series is None:
             series = dict()
 
-        db_choice = self.database_connection_choice.GetStringSelection() or ''
-        if db_choice.lower() in ['no saved connections', 'select a connection']:
-            db_choice = None
-
-        if db_choice is None and hasattr(resource, 'odm_db_name'):
-            db_choice = resource.odm_db_name
+        selected_db = self.database_connection_choice.GetStringSelection()
+        if selected_db.lower() in ['no saved connections', 'select a connection']:
+            selected_db = None
 
         if resource.id in self.H2OService.ManagedResources:
             managed = self.H2OService.ManagedResources[resource.id]
@@ -557,13 +554,16 @@ class VisualH2OWindow(wx.Frame):
             managed.single_file = not self.chunk_by_series_checkbox.IsChecked()
             managed.chunk_years = self.chunk_by_year_checkbox.IsChecked()
             managed.resource_id = resource.id
-            managed.odm_db_name = db_choice
+
+            if selected_db is not None:
+                managed.odm_db_name = selected_db
+
         else:
             managed = H2OManagedResource(resource=resource,
                                          odm_series=series,
                                          resource_id=resource.id,
                                          hs_account_name=self.hydroshare_account_choice.GetStringSelection(),
-                                         odm_db_name=db_choice,
+                                         odm_db_name=selected_db,
                                          single_file=not self.chunk_by_series_checkbox.IsChecked(),
                                          chunk_years=self.chunk_by_year_checkbox.Value,
                                          associated_files=[])
@@ -571,8 +571,10 @@ class VisualH2OWindow(wx.Frame):
             self.H2OService.ManagedResources[resource.id] = managed
 
         self.H2OService.SaveData()
-        self._update_target_choices()
+
         self.hs_resource_choice.SetStringSelection(HS_RES_STR(resource))
+
+        wx.CallAfter(self._update_target_choices)
 
     def _verify_dataset_selections(self):
         if len(self.selected_series_grid.GetSeries()) == 0:
@@ -648,7 +650,10 @@ class VisualH2OWindow(wx.Frame):
                 self.database_connection_choice.SetStringSelection(managed_resource.odm_db_name)
                 self.set_odm_connection(self.H2OService.DatabaseConnections[managed_resource.odm_db_name])
             else:
-                self.on_log_print('Error loading ODM series: Unknown connection "{}"'.format(managed_resource.odm_db_name))
+
+                if managed_resource.odm_db_name is not None:
+                    self.on_log_print('Error loading ODM series: Unknown connection "{}"'.format(managed_resource.odm_db_name))
+
                 return
 
             self.reset_series_in_grid()
