@@ -260,16 +260,19 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         if not len(result.get('resource_name', '')):
             error_list.append("The 'Resource Name' field is required.")
 
-        # If the user did not include a scheme for the agency website, use 'http://' as the default
-        if not re.match(r'https?://', agwebsite):
-            agwebsite = 'http://' + agwebsite
+        # If the value for `agency_url` is not empty, validate the URL, otherwise, continue on
+        if len(agwebsite_initial):
 
-        # If `agwebsite` passes the url pattern check, continue on, otherwise
-        # show some sort of validation error
-        if agwebsite_initial != '' and not self.urlregex.match(agwebsite):
-            error_list.append(
-                "Agency Website '{}' is an invalid URL.\n\nEnter a valid URL to continue.".format(agwebsite_initial)
-            )
+            # If the user did not include a scheme for the agency website, use 'http://' as the default
+            if not re.match(r'https?://', agwebsite):
+                result['agency_url'] = 'http://' + result.get('agency_url', '')
+
+            # If `agwebsite` passes the url pattern check, continue on, otherwise
+            # show some sort of validation error
+            if not self.urlregex.match(result.get('agency_url')):
+                error_list.append(
+                    "Agency Website '{}' is an invalid URL.\n\nEnter a valid URL to continue.".format(agwebsite_initial)
+                )
 
 
         if not len(error_list):

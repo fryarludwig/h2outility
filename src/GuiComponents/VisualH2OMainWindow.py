@@ -182,7 +182,7 @@ class VisualH2OWindow(wx.Frame):
 
                 msg = 'Request could not complete.'
                 if e.status_code == 400:
-                    msg += "\n\nError 400: Bad request. Please check for errors in the Create Resource form."
+                    msg += "\n\nError 400: Bad request. Please try again..."
                 else:
                     msg += "\n\n{}".format(e.message)
 
@@ -191,11 +191,14 @@ class VisualH2OWindow(wx.Frame):
             if resource:
 
                 self._resources[resource.id] = resource
+                self.save_resource_to_managed_resources(resource)
                 self.hs_resource_choice.Append(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
                 self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
                 self.populate_resource_fields(resource)
 
                 self.resourceUIController.EnableControls()
+                self.odmSeriesUIController.EnableDropdown()
+                self.odmSeriesUIController.EnableButtons()
 
         else:
             self.populate_resource_fields(None)
@@ -444,7 +447,8 @@ class VisualH2OWindow(wx.Frame):
         self.available_series_grid.RemoveSelectedRows()
 
         mngres = self.get_managed_resource()
-        mngres.selected_series = self.get_selected_series()
+        if mngres is not None:
+            mngres.selected_series = self.get_selected_series()
 
     def _move_from_selected_series(self, event):
         series_list = [self.odm_series_dict[series_id] for series_id in self.selected_series_grid.GetSelectedSeries()]

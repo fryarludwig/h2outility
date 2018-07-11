@@ -8,6 +8,7 @@ import dateutil.parser
 from hs_restclient import HydroShareNotFound, HydroShareAuthBasic, HydroShareAuthOAuth2, HydroShare, HydroShareException
 from oauthlib.oauth2 import InvalidClientError, InvalidGrantError
 
+from wx.lib.pubsub import pub
 from Common import APP_SETTINGS
 
 
@@ -356,7 +357,11 @@ class HydroShareUtility:
                 if type(csv_file) != str:
                     csv_file = str(csv_file)
                 self.client.addResourceFile(resource_id, csv_file)
-                print("File {} uploaded to remote {}".format(os.path.basename(csv_file), resource_id))
+
+                msg = "File {} uploaded to remote {}".format(os.path.basename(csv_file), resource_id)
+                print(msg)
+                pub.sendMessage('logger', message=msg)
+
         except HydroShareException as e:
             print("Upload failed - could not complete upload to HydroShare due to exception: {}".format(e))
             return False
@@ -384,7 +389,9 @@ class HydroShareUtility:
         try:
             file_list = self.getResourceFileList(resource.id)
             for file_info in file_list:
-                print('Deleting resource file: {}'.format(os.path.basename(file_info['url'])))
+                msg = 'Deleting resource file: {}'.format(os.path.basename(file_info['url']))
+                print(msg)
+                pub.sendMessage('logger', message=msg)
                 self.client.deleteResourceFile(resource.id, os.path.basename(file_info['url']))
         except Exception as e:
             print('Could not delete files in resource {}\n{}'.format(resource.id, e))
@@ -437,12 +444,21 @@ class HydroShareUtility:
             metadata = []
 
             fundingagency = {}
-            agency_attrs = ('funding_agency', 'award_title', 'award_number', 'agency_url')
+            fundingagency_attr_map = (
+                ('funding_agency', 'agency_name'),
+                ('award_title', 'award_title'),
+                ('award_number', 'award_number'),
+                ('agency_url', 'agency_url')
+            )
 
-            for attr in agency_attrs:
-                value = getattr(resource, attr)
+            for reskey, fakey in fundingagency_attr_map:
+                """
+                reskey - resource attribute name
+                fakey - funding agency attribute name
+                """
+                value = getattr(resource, reskey)
                 if len(value):
-                    fundingagency[attr] = value
+                    fundingagency[fakey] = value
 
             if len(fundingagency.keys()):
                 metadata.append({'fundingagency': fundingagency})

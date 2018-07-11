@@ -139,12 +139,15 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
                                                          timeout=APP_SETTINGS.DATAVALUES_TIMEOUT)
     if dataframe is None:
         pass
+
     elif len(dataframe) == 0:
         pass
+
     elif qc_id == 0 or len(variables) != 1 or len(methods) != 1:
         csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
                                        columns="VariableCode", values="DataValue")
         del dataframe
+
     else:
         # Get the qualifiers that we use in this series, merge it with our DataValue set
         qualifier_columns = ["QualifierID", "QualifierCode", "QualifierDescription"]
@@ -187,6 +190,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 site = series_list[0].site  # type: Site
             except Exception:
                 site = Site(site_code=series_list[0].site_code, site_name=series_list[0].site_name)
+
             source = series_list[0].source  # type: Source
             qc = series_list[0].quality_control_level  # type: QualityControlLevel
             variables = list(variables)
@@ -209,6 +213,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
             if APP_SETTINGS.VERBOSE:
                 stopwatch_timer = datetime.datetime.now()
                 print('Querying values for file {}'.format(file_name))
+
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods,
                                                variables, csv_end_datetime, year)
             if APP_SETTINGS.VERBOSE:

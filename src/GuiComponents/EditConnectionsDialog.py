@@ -41,13 +41,14 @@ class DatabaseConnectionDialog(wx.Dialog):
         account_name_sizer1.SetFlexibleDirection(wx.BOTH)
         account_name_sizer1.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
 
-        self.label2 = wx.StaticText(self, wx.ID_ANY, u"Name", wx.DefaultPosition, wx.Size(65, -1), 0)
+        self.label2 = wx.StaticText(self, wx.ID_ANY, "Name", wx.DefaultPosition, wx.Size(65, -1), 0)
         self.label2.Wrap(-1)
         account_name_sizer1.Add(self.label2, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
 
         self.connection_name_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1),
                                                  0, validator=CharValidator(PATTERNS.WORD))
         self.connection_name_input.SetMaxLength(32)
+        self.connection_name_input.SetToolTip('Database nickname (can be anything).')
         account_name_sizer1.Add(self.connection_name_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
 
         account_name_sizer1.AddGrowableCol(1)
@@ -58,12 +59,13 @@ class DatabaseConnectionDialog(wx.Dialog):
         hs_username_sizer.SetFlexibleDirection(wx.BOTH)
         hs_username_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
 
-        self.label3 = wx.StaticText(self, wx.ID_ANY, u"Username", wx.DefaultPosition, wx.Size(65, -1), 0)
+        self.label3 = wx.StaticText(self, wx.ID_ANY, "Username", wx.DefaultPosition, wx.Size(65, -1), 0)
         self.label3.Wrap(-1)
         hs_username_sizer.Add(self.label3, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
 
         self.db_username_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.USERNAME))
         self.db_username_input.SetMaxLength(32)
+        self.db_username_input.SetToolTip("Username used to connect to the database.")
         hs_username_sizer.Add(self.db_username_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1),
                               wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
 
@@ -75,7 +77,7 @@ class DatabaseConnectionDialog(wx.Dialog):
         hs_password_sizer.SetFlexibleDirection(wx.BOTH)
         hs_password_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
 
-        self.label4 = wx.StaticText(self, wx.ID_ANY, u"Password", wx.DefaultPosition, wx.Size(65, -1), 0)
+        self.label4 = wx.StaticText(self, wx.ID_ANY, "Password", wx.DefaultPosition, wx.Size(65, -1), 0)
         self.label4.Wrap(-1)
         hs_password_sizer.Add(self.label4, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
 
@@ -98,6 +100,7 @@ class DatabaseConnectionDialog(wx.Dialog):
 
         self.hostname_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.HOSTNAME))
         self.hostname_input.SetMaxLength(32)
+        self.hostname_input.SetToolTip('URL to database server (e.g. "mydatabaseserver.com")')
         client_id_sizer.Add(self.hostname_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1),
                             wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
 
@@ -115,6 +118,9 @@ class DatabaseConnectionDialog(wx.Dialog):
 
         self.port_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(100, -1), 0, validator=CharValidator(PATTERNS.DIGIT_ONLY))
         self.port_input.SetMaxLength(32)
+        self.port_input.SetToolTip('The port to connect to. Typically,\n'
+                                   'SQL Server (mssql) uses port 1433,\n'
+                                   'and PostgreSQL (psql) uses 5432.')
         port_engine_sizer.Add(self.port_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_LEFT | wx.ALL, 5)
 
         self.m_staticText28 = wx.StaticText(self, wx.ID_ANY, u"Engine", wx.DefaultPosition, wx.Size(65, -1), 0)
