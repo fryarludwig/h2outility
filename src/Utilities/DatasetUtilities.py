@@ -47,6 +47,25 @@ class H2OManagedResource:
         self.chunk_years = chunk_years  # type: bool
         self.associated_files = associated_files if associated_files is not None else []  # type: list[str]
 
+    @property
+    def public(self):
+        if self.resource and hasattr(self.resource, 'public'):
+            return getattr(self.resource, 'public')
+        return False
+
+    @property
+    def subjects(self):
+        if self.resource:
+            if hasattr(self.resource, 'subjects'):
+                return getattr(self.resource, 'subjects')
+            elif hasattr(self.resource, 'keywords'):
+                return getattr(self.resource, 'keywords')
+        return []
+
+    @property
+    def keywords(self):
+        return self.subjects
+
     def __dict__(self):
         return {'resource': self.resource, 'selected_series': self.selected_series,
                 'hs_account_name': self.hs_account_name, 'resource_id': self.resource_id,
@@ -196,7 +215,8 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
             variables = list(variables)
             methods = list(methods)
 
-            base_name = '{}{}_'.format(APP_SETTINGS.DATASET_DIR, site.code)
+            # base_name = '{}{}_'.format(APP_SETTINGS.DATASET_DIR, site.code)
+            base_name = os.path.join(APP_SETTINGS.DATASET_DIR, '{}_'.format(site.code))
             if len(variables) == 1:
                 base_name += '{}_'.format(series_list[0].variable_code)
             base_name += 'QC_{}_Source_{}'.format(qc.code, source.id)
@@ -204,20 +224,24 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 base_name += '_{}'.format(year)
             file_name = base_name + '.csv'
 
-            if os.path.exists(file_name):
-                csv_data = parseCSVData(file_name)
-                csv_end_datetime = csv_data.localDateTime
-            else:
-                csv_end_datetime = None
+            # if os.path.exists(file_name):
+            #     csv_data = parseCSVData(file_name)
+            #     csv_end_datetime = csv_data.localDateTime
+            # else:
+            #     csv_end_datetime = None
+            csv_end_datetime = None
 
+            stopwatch_timer = None
             if APP_SETTINGS.VERBOSE:
                 stopwatch_timer = datetime.datetime.now()
                 print('Querying values for file {}'.format(file_name))
 
             dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods,
                                                variables, csv_end_datetime, year)
+
             if APP_SETTINGS.VERBOSE:
                 print('Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer))
+
             if dataframe is not None:
                 if csv_end_datetime is None:
                     dataframe.sort_index(inplace=True)

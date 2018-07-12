@@ -10,6 +10,7 @@ from oauthlib.oauth2 import InvalidClientError, InvalidGrantError
 
 from wx.lib.pubsub import pub
 from Common import APP_SETTINGS
+from Utilities.DatasetUtilities import H2OManagedResource
 
 
 class HydroShareAccountDetails:
@@ -25,28 +26,31 @@ class HydroShareAccountDetails:
         self.username = ""
         self.password = ""
 
-        settings_path = os.environ.get('SETTINGS_PATH')
+        # settings_path = os.environ.get('SETTINGS_PATH')
 
         # from connection_details import *
 
-        with open(settings_path, 'rb') as fin:
-            settings = json.load(fin)
+        # with open(settings_path, 'rb') as fin:
+        #     settings = json.load(fin)
+        #
+        #     try:
+        #         self.CLIENT_ID = settings['client_id']
+        #         self.CLIENT_SECRET = settings['client_secret']
+        #         self.client_id = self.CLIENT_ID
+        #         self.client_secret = self.CLIENT_SECRET
+        #     except KeyError:
+        #         # This was the way the previous developer was importing settings. I left it here
+        #         # but there's no knowing that it will ever work...
+        #         self.client_id = values['client_id'] if 'client_id' in values else None
+        #         self.client_secret = values['client_secret'] if 'client_secret' in values else None
 
-            try:
-                self.CLIENT_ID = settings['client_id']
-                self.CLIENT_SECRET = settings['client_secret']
-                self.client_id = self.CLIENT_ID
-                self.client_secret = self.CLIENT_SECRET
-            except KeyError:
-                # This was the way the previous developer was importing settings. I left it here
-                # but there's no knowing that it will ever work...
-                self.client_id = values['client_id'] if 'client_id' in values else None
-                self.client_secret = values['client_secret'] if 'client_secret' in values else None
+        self.client_id = self.CLIENT_ID = "8DKopVUmqJ62W1NKN1FbgBkmrrQsHUIIgxEMtHkZ"
+        self.client_secret = self.CLIENT_SECRET = "RwcQhj6wgCdsg14TdpIIQ4VM7rhKO3GCoQrJlJaCKz6woh8Y8VkPzl8u54dxgAZLjmK7quUocHmwUYK1yUVnjvJVqDFy0Te9BgEgn5tWEQXeKeeA9KHeC5VBaBSr95ja"
 
         if values is not None:
-            self.name = values['name'] if 'name' in values else ""
-            self.username = values['user'] if 'user' in values else ""
-            self.password = values['password'] if 'password' in values else ""
+            self.name = values.get('name', '')
+            self.username = values.get('user', '')
+            self.password = values.get('password', '')
 
     def to_dict(self):
         return dict(username=self.username, password=self.password,
@@ -78,23 +82,57 @@ class HydroShareResource:
         return self.subjects
 
     def get_metadata(self):
-        metadata = {
-            'title': str(self.title),
-            'description': str(self.abstract),
-            'funding_agencies': [{'agency_name': str(self.funding_agency),
-                                  'award_title': str(self.award_title),
-                                  'award_number': str(self.award_number),
-                                  'agency_url': str(self.agency_url)}],
-            "coverage": [{"type": "period",
-                         "value": {"start": self.period_start, "end": self.period_end}}]
-        }
+        md = self.__metadata__()
 
         if APP_SETTINGS.H2O_DEBUG:
-            print(metadata)
-        return metadata
+            print(md)
+        return md
 
     def __str__(self):
         return '{} with {} files'.format(self.title, len(self.files))
+
+    def __metadata__(self):
+
+        metadata = {}
+
+        if hasattr(self, 'title'):
+            metadata['title'] = getattr(self, 'title', '')
+
+        if hasattr(self, 'abstract'):
+            if len(self.abstract):
+                metadata['description'] = getattr(self, 'abstract', '')
+
+        if all([getattr(self, 'period_start', None), getattr(self, 'period_end', None)]):
+            metadata['coverage'] = [{"type": "period",
+                                             "value": {"start": self.period_start, "end": self.period_end}}]
+
+        fundingagency = {}
+        fundingagency_attr_map = (
+            ('funding_agency', 'agency_name'),
+            ('award_title', 'award_title'),
+            ('award_number', 'award_number'),
+            ('agency_url', 'agency_url')
+        )
+
+        for reskey, fakey in fundingagency_attr_map:
+            """
+            reskey - resource attribute name
+            fakey - funding agency attribute name
+            """
+            value = getattr(self, reskey)
+
+            if isinstance(value, unicode):
+                value = str(value)
+
+            if isinstance(value, str):
+                value = value.strip()
+                if len(value):
+                    fundingagency[fakey] = value
+
+        if len(fundingagency.keys()):
+            metadata['fundingagency'] = fundingagency
+
+        return metadata
 
 
 class ResourceTemplate:
@@ -157,6 +195,11 @@ class HydroShareUtility:
         :param client_secret: Client Secret provided by HydroShare
         :return: Returns true if authentication was successful, false otherwise
         """
+
+        if not all([username, password]):
+            self.auth = None
+            return False
+
         if client_id is not None and client_secret is not None:
             self.auth = HydroShareAuthOAuth2(client_id, client_secret, username=username, password=password)
         else:
@@ -171,7 +214,11 @@ class HydroShareUtility:
             print('Credentials could not be validated: {}'.format(e))
         except InvalidClientError as e:
             print('Invalid client ID and/or client secret: {}'.format(e))
+        except Exception as e:
+            print(e)
+        
         self.auth = None
+
         return False
 
     def purgeDuplicateGamutFiles(self, resource_id, regex, confirm_delete=False):
@@ -427,7 +474,7 @@ class HydroShareUtility:
         except Exception as e:
             print('Exception encountered while deleting resource {}: {}'.format(resource_id, e))
 
-    def createNewResource(self, resource):
+    def createNewResource(self, resource):  # type: (ResourceTemplate) -> HydroShareResource
         """
 
         :param resource:
@@ -456,7 +503,8 @@ class HydroShareUtility:
                 reskey - resource attribute name
                 fakey - funding agency attribute name
                 """
-                value = getattr(resource, reskey)
+                value = getattr(resource, reskey).strip()
+
                 if len(value):
                     fundingagency[fakey] = value
 

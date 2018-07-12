@@ -84,7 +84,16 @@ class VisualH2OWindow(wx.Frame):
         self.mapping_grid = None  # type: WxHelper.SeriesGrid
 
         # just technicalities, honestly
+        ## Rrriiiggghhhttt, calling the inherited class' init function is just a technicality...
         super(wx.Frame, self).__init__(parent, id, title, style=wx.DEFAULT_FRAME_STYLE, size=self.ORIGINAL_SIZE)
+
+        iconpath = os.path.abspath('./visual.ico')
+        if os.path.isfile(iconpath):
+            iconbmp = wx.Bitmap(iconpath, wx.BITMAP_TYPE_ANY)
+            icon = wx.Icon()
+            icon.CopyFromBitmap(iconbmp)
+            self.SetIcon(icon)
+
         self.panel = wx.Panel(self, wx.ID_ANY)
         self.Centre()
         main_sizer = self._build_main_window()
@@ -192,6 +201,11 @@ class VisualH2OWindow(wx.Frame):
 
                 self._resources[resource.id] = resource
                 self.save_resource_to_managed_resources(resource)
+
+                mngres = self.H2OService.ManagedResources.get(resource.id, None)
+                if mngres:
+                    self.clean_resource = copy.copy(mngres)
+
                 self.hs_resource_choice.Append(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
                 self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id))
                 self.populate_resource_fields(resource)
