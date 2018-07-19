@@ -5,7 +5,7 @@ from time import sleep
 import pandas
 
 from Common import *
-from GAMUTRawData.odmdata import QualityControlLevel, Series, Site, Source
+from GAMUTRawData.odmdata import QualityControlLevel, Series, Site, Source, Qualifier
 from GAMUTRawData.odmservices import SeriesService, ServiceManager
 
 this_file = os.path.realpath(__file__)
@@ -149,6 +149,9 @@ def createFile(filepath):
 def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, starting_date,
                            year=None):
     csv_table = None
+    q_list = []
+    censor_list = []
+
     if APP_SETTINGS.SKIP_QUERIES:
         dataframe = None
     else:
@@ -163,8 +166,10 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
         pass
 
     elif qc_id == 0 or len(variables) != 1 or len(methods) != 1:
-        csv_table = pandas.pivot_table(dataframe, index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
-                                       columns="VariableCode", values="DataValue")
+        csv_table = pandas.pivot_table(dataframe,
+                                       index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
+                                       columns='VariableCode',
+                                       values='DataValue')
         del dataframe
 
     else:
@@ -180,11 +185,14 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
             if column not in ["DataValue", "CensorCode", "QualifierCode"]:
                 csv_table.drop(column, axis=1, inplace=True)
         csv_table.rename(columns={"DataValue": series_list[0].variable.code}, inplace=True)
-    return csv_table
+
+        if 'CensorCode' in csv_table:
+            censor_list = set(csv_table['CensorCode'].tolist())
+
+    return csv_table, q_list, censor_list  # don't ask questions... just let it happen
 
 
-def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
-    # type: (SeriesService, list[Series], int, list[tuple(str)]) -> str
+def BuildCsvFile(series_service, series_list, year=None, failed_files=list()):  # type: (SeriesService, list[Series], int, list[tuple(str)]) -> str | None
     try:
         if len(series_list) == 0:
             print('Cannot generate a file for no series')
@@ -209,6 +217,8 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 site = series_list[0].site  # type: Site
             except Exception:
                 site = Site(site_code=series_list[0].site_code, site_name=series_list[0].site_name)
+
+
 
             source = series_list[0].source  # type: Source
             qc = series_list[0].quality_control_level  # type: QualityControlLevel
@@ -236,8 +246,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                 stopwatch_timer = datetime.datetime.now()
                 print('Querying values for file {}'.format(file_name))
 
-            dataframe = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods,
-                                               variables, csv_end_datetime, year)
+            dataframe, qualifier_codes, censorcodes = GetTimeSeriesDataframe(series_service, series_list, site.id, qc.id, source.id, methods, variables, csv_end_datetime, year)
 
             if APP_SETTINGS.VERBOSE:
                 print('Query execution took {}'.format(datetime.datetime.now() - stopwatch_timer))
@@ -245,7 +254,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
             if dataframe is not None:
                 if csv_end_datetime is None:
                     dataframe.sort_index(inplace=True)
-                    headers = BuildSeriesFileHeader(series_list, site, source)
+                    headers = BuildSeriesFileHeader(series_list, site, source, qualifier_codes, censorcodes)
                     if WriteSeriesToFile(file_name, dataframe, headers):
                         return file_name
                     else:
@@ -258,7 +267,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=[]):
                         print('Unable to append series to file {}'.format(file_name))
                         failed_files.append((file_name, 'Unable to append series to file'))
             elif APP_SETTINGS.SKIP_QUERIES:
-                headers = BuildSeriesFileHeader(series_list, site, source)
+                headers = BuildSeriesFileHeader(series_list, site, source, qualifier_codes, censorcodes)
                 if WriteSeriesToFile(file_name, dataframe, headers):
                     return file_name
             elif dataframe is None and csv_end_datetime is not None:
@@ -321,11 +330,7 @@ def GetSeriesYearRange(series_list):
     return range(start_date.year, end_date.year + 1)
 
 
-def BuildSeriesFileHeader(series_list, site, source):
-    """
-
-    :type series_service: SeriesService
-    """
+def BuildSeriesFileHeader(series_list, site, source, qualifier_codes=[], censorcodes=set()):
     header = ''
 
     if len(series_list) == 1:
@@ -341,6 +346,10 @@ def BuildSeriesFileHeader(series_list, site, source):
     header += generateSiteInformation(site)
     header += var_data.printToFile() + '#\n'
     header += source_info.outputSourceInfo() + '#\n'
+    if len(censorcodes):
+        header += generateCensorCodes()
+    header += generateQualifierCodes(qualifier_codes) + '#\n'
+
     return header
 
 
@@ -367,6 +376,28 @@ def generateSiteInformation(site):
     file_str += "# SiteType: " + str(site.type) + "\n"
     file_str += "#\n"
     return file_str
+
+
+def generateCensorCodes():
+
+    return "# Censor Codes\n" + \
+           "# ----------------------------------\n" + \
+           "# nc: not censored\n" + \
+           "#\n"
+
+
+def generateQualifierCodes(codes):  # type: ([(int, str, str)]) -> str
+
+    if not len(codes):
+        return ""
+
+    header = '# Qualifier Codes\n# ----------------------------------\n'
+
+    for code in codes:
+        _, abrv, definition = code
+        header += '# %s: %s\n' % (abrv, definition)
+
+    return header + '#\n'
 
 
 def parseCSVData(filePath):

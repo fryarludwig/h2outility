@@ -38,10 +38,10 @@ class Common:
         General constants and non-class variables
         """
         op_file = 'operations_file.json'                                  # Default settings file name
-        if any("--settings_file" in item for item in args):
+        if any("--operations-file" in item for item in args):
 
-            op_fpath = [item for item in args if '--settings_file' in item][0] or ''
-            op_fpath = os.path.abspath(op_fpath.split('--settings_file=')[1])
+            op_fpath = [item for item in args if '--operations-file' in item][0] or ''
+            op_fpath = os.path.abspath(op_fpath.split('--operations-file=')[1])
 
             if not os.path.isfile(op_fpath):
                 # If the operations file does not exist, create a new one with an empty dict

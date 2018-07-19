@@ -205,8 +205,12 @@ class SeriesService():
         :param series_id:
         :return:
         """
-        subquery = self._edit_session.query(DataValue.qualifier_id).outerjoin(
-                Series.data_values).filter(Series.id == series_id, DataValue.qualifier_id != None).distinct().subquery()
+        subquery = self._edit_session.query(DataValue.qualifier_id)\
+            .outerjoin(Series.data_values)\
+            .filter(Series.id == series_id, DataValue.qualifier_id != None)\
+            .distinct()\
+            .subquery()
+
         return self._edit_session.query(Qualifier).join(subquery).distinct().all()
 
     def get_qualifiers_by_series_details(self, site_id, qc_id, source_id, method_id, var_ids, year=None):

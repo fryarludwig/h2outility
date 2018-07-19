@@ -12,7 +12,7 @@ import wx.grid
 from wx.lib.pubsub import pub
 # from pubsub import pub
 
-from hs_restclient import HydroShareException
+from hs_restclient import HydroShareException, HydroShareNotFound
 
 from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtility, ResourceTemplate, \
     HydroShareResource
@@ -155,6 +155,9 @@ class VisualH2OWindow(wx.Frame):
         self.log_message_listbox.Select(len(self.log_message_listbox.Items) - 1)
         self.log_message_listbox.Deselect(len(self.log_message_listbox.Items) - 1)
 
+        item_count = self.log_message_listbox.GetCount() - 1 if self.log_message_listbox.GetCount() > 0 else 0
+        self.log_message_listbox.EnsureVisible(item_count)
+
     def update_choice_controls(self, progress=None):
         WxHelper.UpdateChoiceControl(self.database_connection_choice, self._get_database_choices())
         WxHelper.UpdateChoiceControl(self.hydroshare_account_choice, self._get_hydroshare_choices())
@@ -214,8 +217,10 @@ class VisualH2OWindow(wx.Frame):
                 self.odmSeriesUIController.EnableDropdown()
                 self.odmSeriesUIController.EnableButtons()
 
+                self.check_if_dirty()
+
         else:
-            self.populate_resource_fields(None)
+            self.populate_resource_fields()
 
     def on_remove_database_auth(self, result=None):
         if result is None:
@@ -492,10 +497,15 @@ class VisualH2OWindow(wx.Frame):
             self.on_log_print('Resource not selected.')
             return
 
+        self._remove_managed_resource(resource)
+        self.hs_resource_choice.SetSelection(event.GetSelection())
+
+    def _remove_managed_resource(self, resource):  # type: (HydroShareResource) -> None
         self.H2OService.ManagedResources.pop(resource.id, None)
         self.H2OService.SaveData()
+        self.populate_resource_fields()
         self._update_target_choices()
-        self.hs_resource_choice.SetSelection(event.GetSelection())
+        self.hs_resource_choice.SetStringSelection(CHOICE_DEFAULTS.CREATE_NEW_RESOURCE)
 
     def _delete_files_clicked(self, event):
         resource = self._get_selected_resource()  # type: HydroShareResource
@@ -607,7 +617,7 @@ class VisualH2OWindow(wx.Frame):
         return HydroShareResourceTemplateDialog(self, self.H2OService.ResourceTemplates,
                                                 create_selected=create_resource).ShowModal()
 
-    def on_run_script_clicked(self, event):
+    def on_click_upload_series(self, event):
         """
         Starts the file upload process given the user has selected series to be uploaded for the
         currently selected resource
@@ -616,16 +626,21 @@ class VisualH2OWindow(wx.Frame):
 
         data = self.H2OService.LoadData()
         managed_resources = data.get('managed_resources', {})
-        mngd_resource = managed_resources.get(self._get_selected_resource().id, None)
+        mngd_resource = managed_resources.get(self._get_selected_resource().id, None)  # type: H2OManagedResource
+
+        for rid, resource in self.H2OService.ManagedResources.iteritems():  # type: str, H2OManagedResource
+            if resource.resource_id != mngd_resource.resource_id:
+                self.H2OService.ManagedResources[rid].selected_series = {}
+            else:
+                self.H2OService.ManagedResources[rid].selected_series = self.get_selected_series()
 
         if mngd_resource and len(mngd_resource.selected_series):
             # Only run if the managed resource has selected series
-            self.on_log_print('Running script')
             self.run_script_button.Enable(enable=False)
             self.stop_script_button.Enable(enable=True)
 
             try:
-                self.H2OService.StartOperations()
+                self.H2OService.StartSeriesFileUpload(mngd_resource)
             except Exception as e:
                 self.on_log_print(e.message)
 
@@ -667,23 +682,24 @@ class VisualH2OWindow(wx.Frame):
             if managed_resource.odm_db_name in self.H2OService.DatabaseConnections:
                 self.database_connection_choice.SetStringSelection(managed_resource.odm_db_name)
                 self.set_odm_connection(self.H2OService.DatabaseConnections[managed_resource.odm_db_name])
+
+                self.reset_series_in_grid()
+                matches = self._get_current_series_ids_from_resource(managed_resource)
+                for series in self.odm_series_dict.itervalues():
+                    if series.id in matches:
+                        self.selected_series_grid.AppendSeries(series)
+                    else:
+                        self.available_series_grid.AppendSeries(series)
+
+                self.chunk_by_series_checkbox.SetValue(wx.CHK_CHECKED if not managed_resource.single_file else wx.CHK_UNCHECKED)
+                self.chunk_by_year_checkbox.Value = managed_resource.chunk_years
+
             else:
 
                 if managed_resource.odm_db_name is not None:
                     self.on_log_print('Error loading ODM series: Unknown connection "{}"'.format(managed_resource.odm_db_name))
 
-                return
-
-            self.reset_series_in_grid()
-            matches = self._get_current_series_ids_from_resource(managed_resource)
-            for series in self.odm_series_dict.itervalues():
-                if series.id in matches:
-                    self.selected_series_grid.AppendSeries(series)
-                else:
-                    self.available_series_grid.AppendSeries(series)
-
-            self.chunk_by_series_checkbox.SetValue(wx.CHK_CHECKED if not managed_resource.single_file else wx.CHK_UNCHECKED)
-            self.chunk_by_year_checkbox.Value = managed_resource.chunk_years
+        self.check_if_dirty()
 
     def _change_resource(self, event):
 
@@ -717,20 +733,37 @@ class VisualH2OWindow(wx.Frame):
 
             def __get_resource(q, managed_resource):
                 resource_ = managed_resource.resource if hasattr(managed_resource, 'resource') else managed_resource
-                self.H2OService.ActiveHydroshare.getMetadataForResource(resource_)
 
-                self.H2OService.ActiveHydroshare.requestAccessRules(resource_)
+                try:
 
-                wx.CallAfter(pub.sendMessage, 'onCompleteGetResource', resource=managed_resource)
+                    self.H2OService.ActiveHydroshare.getMetadataForResource(resource_)
+                    self.H2OService.ActiveHydroshare.requestAccessRules(resource_)
+
+                    wx.CallAfter(pub.sendMessage, 'onCompleteGetResource', resource=managed_resource)
+
+                except HydroShareNotFound:
+
+                    dialog = wx.MessageDialog(self.panel,
+                                              'The selected resource was not found in hydroshare.\n\nRemove "{}" from managed resources?'.format(resource_.title),
+                                              caption='Resource Not Found',
+                                              style=wx.YES | wx.NO)
+
+                    choice = dialog.ShowModal()
+
+                    if choice == wx.ID_YES:
+                        self._remove_managed_resource(resource_)
+
 
             thread = threading.Thread(target=__get_resource, args=(Queue(), resource))
             thread.setDaemon(True)
             thread.start()
 
-    def populate_resource_fields(self, resource):  # type: (HydroShareResource) -> None
+    def populate_resource_fields(self, resource=None):  # type: (HydroShareResource) -> None
         if resource is None:
             for label in self.resourceUIController.inputs:
                 label.SetLabel('')
+            self.is_public_checkbox.SetValue(False)
+            self.is_private_checkbox.SetValue(False)
         else:
             self.resource_abstract_input.Value = resource.abstract
             self.resource_agency_website_input.SetLabel(' {}'.format(resource.agency_url))
@@ -773,7 +806,18 @@ class VisualH2OWindow(wx.Frame):
         self.on_log_print(state + message)
 
     def update_status_gauge_uploads(self, resource="None", completed=None, started=None):
-        message = ' file uploads to resource "{}"'.format(resource)
+
+        def pluralize(word, count):
+            s = 's' if count > 1 else ''
+            return '%s%s' % (word, s)
+
+        if isinstance(resource, list):
+            resources = ", ".join([str(rsrc) for rsrc in resource])
+            message = ' file uploads to {rsrc}: {rsrcs}'.format(rsrc=pluralize('resource', len(resource)),
+                                                                rsrcs=resources)
+        else:
+            message = ' file uploads to resource: {}'.format(resource)
+
         state = 'None'
         if completed is not None:
             state = 'Finished'
@@ -890,7 +934,7 @@ class VisualH2OWindow(wx.Frame):
         """
         Build action sizer and logging box
         """
-        self.run_script_button = WxHelper.GetButton(self, self.panel, "Upload Series", self.on_run_script_clicked)
+        self.run_script_button = WxHelper.GetButton(self, self.panel, "Upload Series", self.on_click_upload_series)
         self.stop_script_button = WxHelper.GetButton(self, self.panel, "Cancel", self.on_stop_script_clicked)
         self.stop_script_button.Enable(enable=False)
 
@@ -901,7 +945,6 @@ class VisualH2OWindow(wx.Frame):
                                                        font=self.MONOSPACE,
                                                        on_right_click=self.on_right_click_log_output,
                                                        style=wx.HSCROLL | wx.TE_RICH)
-
 
         self.clear_console_button = WxHelper.GetButton(self, self.panel, "Clear Console",
                                                        lambda ev: self.log_message_listbox.Clear())
@@ -1076,16 +1119,16 @@ class VisualH2OWindow(wx.Frame):
         """
         self.remove_files_button = WxHelper.GetButton(self, self.panel, "Delete Resource Files",
                                                       self._delete_files_clicked)
-        self.update_resource = WxHelper.GetButton(self, self.panel, "Update Resource", self.on_click_update)
+        self.update_resource_button = WxHelper.GetButton(self, self.panel, "Update Resource", self.on_click_update)
 
         sizer.Add(resourceManagementLabel, pos=(3, 0), span=(1, 1))
         sizer.Add(self.remove_files_button, pos=(4, 0), span=(1, 1), flag=wx.ALIGN_CENTER)
         # sizer.Add(self.set_resource_visibility_button, pos=(4, 1), span=(1, 1), flag=wx.ALIGN_CENTER)
-        sizer.Add(self.update_resource, pos=(4, 1), span=(1, 1), flag=wx.ALIGN_CENTER)
+        sizer.Add(self.update_resource_button, pos=(4, 1), span=(1, 1), flag=wx.ALIGN_CENTER)
 
         self.resourceUIController = UIController(inputs=[self.resource_abstract_input, self.keywords_input],
                                                  buttons=[self.remove_files_button,
-                                                          self.update_resource],
+                                                          self.update_resource_button],
                                                  dropdowns=[self.hs_resource_choice],
                                                  checkboxes=[self.is_public_checkbox, self.is_private_checkbox])
 
@@ -1125,7 +1168,7 @@ class VisualH2OWindow(wx.Frame):
             is_dirty = self.is_dirty_keywords()
 
         # Enable/disable the Update button
-        self.update_resource.Enable(is_dirty)
+        self.update_resource_button.Enable(is_dirty)
 
     def is_dirty_sharing_status(self):
 
@@ -1148,10 +1191,20 @@ class VisualH2OWindow(wx.Frame):
         else:
             curr_keywords = curr_keywords.split(',')
 
-        dirty_keywords = sorted(map(lambda x: x.strip(), curr_keywords))
-        clean_keywords = sorted(map(lambda x: x.strip(), self.clean_resource.subjects))
+        # Sssoooo, keywords can have commas in them (i.e. "Pressure, absolute")
+        # This is a problem, because keywords are entered as a *comma* seperated
+        # list. As a solution, albeit terrible, split all keywords/subjects
+        # by commas, even if two words belong to the same keyword.
+        flatten = lambda l: [item for sublist in l for item in sublist]
+        clean_keywords = map(lambda x: x.split(','), self.clean_resource.subjects)
+        clean_keywords = flatten(clean_keywords)
 
-        return dirty_keywords != clean_keywords
+
+        dirty_keywords = map(lambda x: str(x).strip(), curr_keywords)
+        clean_keywords = map(lambda x: str(x).strip(), clean_keywords)
+
+        isdirty = set(dirty_keywords) != set(clean_keywords)
+        return isdirty
 
     def on_click_update(self, event):
         """

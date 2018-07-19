@@ -91,6 +91,9 @@ class HydroShareResource:
     def __str__(self):
         return '{} with {} files'.format(self.title, len(self.files))
 
+    def __repr__(self):
+        return getattr(self, 'title', 'N/A')
+
     def __metadata__(self):
 
         metadata = {}
@@ -389,13 +392,13 @@ class HydroShareUtility:
             filtered_resources.append(resource_object)
         return filtered_resources
 
-    def UploadFiles(self, files, resource_id):
+    def UploadFiles(self, files, resource):  # type: ([str], HydroShareResource) -> bool
         if self.auth is None:
             raise HydroShareUtilityException("Cannot modify resources without authentication")
         try:
             for csv_file in files:
                 try:
-                    self.client.deleteResourceFile(resource_id, os.path.basename(csv_file))
+                    self.client.deleteResourceFile(resource.id, os.path.basename(csv_file))
                 except HydroShareNotFound:
                     pass
                 # except Exception as e:
@@ -403,9 +406,9 @@ class HydroShareUtility:
                 #         print 'File did not exist in remote: {}, {}'.format(type(e), e)
                 if type(csv_file) != str:
                     csv_file = str(csv_file)
-                self.client.addResourceFile(resource_id, csv_file)
+                self.client.addResourceFile(resource.id, csv_file)
 
-                msg = "File {} uploaded to remote {}".format(os.path.basename(csv_file), resource_id)
+                msg = "File {} uploaded to remote {}".format(os.path.basename(csv_file), repr(resource))
                 print(msg)
                 pub.sendMessage('logger', message=msg)
 

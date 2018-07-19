@@ -68,8 +68,10 @@ class H2OService:
                     try:
                         account = self.HydroShareConnections[resource.hs_account_name]
                         self.ActiveHydroshare = HydroShareUtility()
-                        if self.ActiveHydroshare.authenticate(**account.to_dict()):
-                            connection_message = 'Successfully authenticated HydroShare account details'
+
+                        self.ActiveHydroshare.authenticate(**account.to_dict())
+
+                        connection_message = 'Successfully authenticated HydroShare account details'
 
                     except Exception as e:
                         connection_message = 'Unable to authenticate - An exception occurred: {}'.format(e)
@@ -97,20 +99,32 @@ class H2OService:
         else:
             return True
 
-    def _generate_datasets(self):
+    def _generate_datasets(self, resource=None):
         dataset_count = len(self.ManagedResources)
         current_dataset = 0
         odm_service = ServiceManager()
 
         database_resource_dict = {}
-        for resource in self.ManagedResources.itervalues():
-            if resource.odm_db_name.lower() == 'no saved connections':
-                continue
 
-            if resource.odm_db_name not in database_resource_dict:
-                database_resource_dict[resource.odm_db_name] = []
+        if resource is not None:
 
-            database_resource_dict[resource.odm_db_name].append(resource)
+            database_resource_dict[resource.odm_db_name] = [resource]
+
+        else:
+
+            for rsrc in self.ManagedResources.itervalues():
+
+                if not rsrc.odm_db_name:
+                    continue
+
+                if rsrc.odm_db_name.lower() == 'no saved connections':
+                    continue
+
+                if rsrc.odm_db_name not in database_resource_dict:
+                    database_resource_dict[rsrc.odm_db_name] = []
+
+                database_resource_dict[rsrc.odm_db_name].append(rsrc)
+
 
         for db_dame in database_resource_dict.keys():
             self._thread_checkpoint()
@@ -123,20 +137,24 @@ class H2OService:
                 continue
 
             series_service = odm_service.get_series_service()
-            for resource in database_resource_dict[db_dame]:
+            for rsrc in database_resource_dict[db_dame]:
+
+                # Reset the associated files so they don't keep getting uploaded over, and over, and over, and over, and over, and...
+                rsrc.associated_files = []
+
                 try:
                     self._thread_checkpoint()
-                    if resource.resource is None:
-                        print('Error encountered: resource {} is missing values'.format(resource.resource_id))
+                    if rsrc.resource is None:
+                        print('Error encountered: resource {} is missing values'.format(rsrc.resource_id))
                         continue
 
                     current_dataset += 1
-                    self.NotifyVisualH2O('Dataset_Started', resource.resource.title, current_dataset, dataset_count)
+                    self.NotifyVisualH2O('Dataset_Started', rsrc.resource.title, current_dataset, dataset_count)
                     self._thread_checkpoint()
 
-                    chunks = OdmSeriesHelper.DetermineForcedSeriesChunking(resource)
-                    print('\n -- {} has {} chunks {}'.format(resource.resource.title, len(chunks),
-                                                             'per year' if resource.chunk_years else ''))
+                    chunks = OdmSeriesHelper.DetermineForcedSeriesChunking(rsrc)
+                    print('\n -- {} has {} chunks {}'.format(rsrc.resource.title, len(chunks),
+                                                             'per year' if rsrc.chunk_years else ''))
                     for chunk in chunks:
                         self._thread_checkpoint()
                         failed_files = []
@@ -152,26 +170,26 @@ class H2OService:
                             else:
                                 odm_series_list.append(result_series)
 
-                        if resource.chunk_years:
+                        if rsrc.chunk_years:
 
                             for year in GetSeriesYearRange(odm_series_list):
                                 self._thread_checkpoint()
 
                                 result_file = BuildCsvFile(series_service, odm_series_list, year, failed_files)
                                 if result_file is not None:
-                                    resource.associated_files.append(result_file)
+                                    rsrc.associated_files.append(result_file)
 
                         else:
                             self._thread_checkpoint()
 
                             result_file = BuildCsvFile(series_service, odm_series_list, failed_files=failed_files)
                             if result_file is not None:
-                                resource.associated_files.append(result_file)
+                                rsrc.associated_files.append(result_file)
 
                         for filename, message in failed_files:
                             self.NotifyVisualH2O('File_Failed', filename, message)
 
-                    self.NotifyVisualH2O('Dataset_Generated', resource.resource.title, current_dataset, dataset_count)
+                    self.NotifyVisualH2O('Dataset_Generated', rsrc.resource.title, current_dataset, dataset_count)
 
                     return dataset_count
 
@@ -187,12 +205,17 @@ class H2OService:
 
         self.NotifyVisualH2O('Datasets_Completed', current_dataset, dataset_count)
 
-    def _upload_files(self):
+    def _upload_files(self, resource=None):
         dataset_count = len(self.ManagedResources)
         current_dataset = 0
         resource_names = []
 
-        for resource in self.ManagedResources.values():
+        if resource is not None:
+            resources = [resource]
+        else:
+            resources = self.ManagedResources.values()
+
+        for resource in resources:
             self._thread_checkpoint()
 
             if APP_SETTINGS.SKIP_HYDROSHARE:
@@ -227,7 +250,7 @@ class H2OService:
                 if APP_SETTINGS.DELETE_RESOURCE_FILES:
                     self.ActiveHydroshare.deleteFilesInResource(resource.resource_id)
 
-                self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource_id)
+                self.ActiveHydroshare.UploadFiles(resource.associated_files, resource.resource)
 
                 if APP_SETTINGS.SET_RESOURCES_PUBLIC:
                     self.ActiveHydroshare.setResourcesAsPublic([resource.resource_id])
@@ -276,33 +299,38 @@ class H2OService:
         else:
             self.NotifyVisualH2O('Operations_Stopped', 'Script was not running')
 
-    def _start_as_thread(self, thread_func):
+    def _start_as_thread(self, thread_func, resource=None):
         if self.ThreadedFunction is not None and self.ThreadedFunction.is_alive():
             self.ThreadedFunction.join(3)
         self.StopThread = False
-        self.ThreadedFunction = Thread(target=thread_func)
+        self.ThreadedFunction = Thread(target=thread_func, kwargs={'resource': resource})
         self.ThreadedFunction.start()
 
-    def _threaded_operations(self):
+    def _threaded_operations(self, resource=None):  # type: (H2OManagedResource) -> None
         try:
-            print('Starting CSV file generation')
-            dataset_count = self._generate_datasets()
+            print('Generating CSV file(s)')
+            dataset_count = self._generate_datasets(resource=resource)
 
             # If the dataset count is not 0, attempt to upload the files.
             if dataset_count:
                 print('\nStarting CSV file upload')
-                self._upload_files()
-                self.NotifyVisualH2O('Operations_Stopped', 'Script completed successfully')
+                self._upload_files(resource=resource)
+                self.NotifyVisualH2O('Operations_Stopped', 'CSV file upload complete')
+            else:
+                self.NotifyVisualH2O('Operations_Stopped', 'No datasets found for the selected series.')
 
         except H2OService.StopThreadException as e:
             print('File generation and uploads stopped: {}'.format(e))
             self.NotifyVisualH2O('Operations_Stopped', 'Script stopped by user')
 
-    def StartOperations(self, blocking=False):
+    def StartSeriesFileUpload(self, resource, blocking=False):  # type: (H2OManagedResource, bool) -> any
+        self.StartOperations(resource=resource, blocking=blocking)
+
+    def StartOperations(self, resource=None, blocking=False):  # type: (H2OManagedResource, bool) -> any
         if blocking:
-            return self._threaded_operations()
+            return self._threaded_operations(resource)
         else:
-            return self._start_as_thread(self._threaded_operations)
+            return self._start_as_thread(self._threaded_operations, resource)
 
     def NotifyVisualH2O(self, pub_key, *args):
         try:
