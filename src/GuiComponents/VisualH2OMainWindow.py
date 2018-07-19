@@ -123,7 +123,6 @@ class VisualH2OWindow(wx.Frame):
             (self.__onChangeResource, 'resource.change'),
             (self.__onGetResourceComplete, 'onCompleteGetResource'),
             (self.__onChangeODMDBConnection, 'odmdb.change_connection'),
-            (self.__onSetVisibility, 'resource.set_visibility'),
             (self.__onUpdateResource, 'resource.update')
         ]
         for observer, signal in subscriptions:
@@ -185,7 +184,7 @@ class VisualH2OWindow(wx.Frame):
         if result is None:
             return
 
-        template = ResourceTemplate(result)
+        template = ResourceTemplate(**result)
         resource = None
         if template is not None:
             try:
@@ -217,7 +216,7 @@ class VisualH2OWindow(wx.Frame):
                 self.odmSeriesUIController.EnableDropdown()
                 self.odmSeriesUIController.EnableButtons()
 
-                self.check_if_dirty()
+                self.is_dirty_keywords()
 
         else:
             self.populate_resource_fields()
@@ -699,7 +698,7 @@ class VisualH2OWindow(wx.Frame):
                 if managed_resource.odm_db_name is not None:
                     self.on_log_print('Error loading ODM series: Unknown connection "{}"'.format(managed_resource.odm_db_name))
 
-        self.check_if_dirty()
+        self.on_change_keywords_input()
 
     def _change_resource(self, event):
 
@@ -887,7 +886,7 @@ class VisualH2OWindow(wx.Frame):
         self.add_to_selected_button.Disable()
 
         # Database connection items
-        row = 0
+        row = 1
         span = 3
         edit_database_button = WxHelper.GetButton(self, self.panel, u'Edit...', on_click=self.on_edit_database)
         self.database_connection_choice = WxHelper.GetChoice(self, self.panel, self._get_database_choices(),
@@ -897,7 +896,10 @@ class VisualH2OWindow(wx.Frame):
         odm_series_sizer.Add(self.database_connection_choice, pos=(row + 1, 0), span=(1, span), flag=ALIGN.LEFT)
         odm_series_sizer.Add(edit_database_button, pos=(row + 1, span), span=(1, 1))
 
-        # File chunking options
+        # File options
+        self.remove_files_button = WxHelper.GetButton(self, self.panel, "Delete Resource Files",
+                                                      self._delete_files_clicked)
+
         text_flags = wx.ALIGN_CENTER | wx.ALIGN_CENTER_VERTICAL
         self.chunk_by_year_checkbox = WxHelper.GetCheckBox(self, self.panel, u'Group series by year')
         self.chunk_by_year_checkbox.SetToolTip(wx.ToolTip(tip="Select to split series into multiple \n"
@@ -908,9 +910,12 @@ class VisualH2OWindow(wx.Frame):
                                                             "files (by default, series are uploaded\n"
                                                             "as a single file)."))
 
-        odm_series_sizer.Add(self.create_gui_label(u'File options:    '), pos=(row + 1, 6), span=(1, 1), flag=text_flags)
-        odm_series_sizer.Add(self.chunk_by_series_checkbox, pos=(row + 1, 7), span=(1, 1), flag=text_flags)
-        odm_series_sizer.Add(self.chunk_by_year_checkbox, pos=(row + 1, 8), span=(1, 1), flag=text_flags)
+        odm_series_sizer.Add(self.create_gui_label(u'File options: '), pos=(row+1, 5), span=(1, 1), flag=text_flags)
+        odm_series_sizer.Add(self.chunk_by_series_checkbox, pos=(row+1, 6), span=(1, 1), flag=text_flags)
+        odm_series_sizer.Add(self.chunk_by_year_checkbox, pos=(row+1, 7), span=(1, 1), flag=text_flags)
+        odm_series_sizer.Add(self.remove_files_button, pos=(row+1, 8), span=(1, 1))
+
+        # row += 1
 
         # Series selection controls
         odm_series_sizer.Add(self.create_gui_label(u'Available Series', font=self.MONOSPACE.Bold()), pos=(row + 2, 0),
@@ -1065,8 +1070,8 @@ class VisualH2OWindow(wx.Frame):
         self.is_private_checkbox = wx.CheckBox(self.panel, wx.ID_ANY, 'Private', wx.Point(-1, -1), wx.DefaultSize, 0)
 
         # add event binding to the checkboxes
-        self.Bind(wx.EVT_CHECKBOX, self.on_check_is_public, self.is_public_checkbox)
-        self.Bind(wx.EVT_CHECKBOX, self.on_check_is_private, self.is_private_checkbox)
+        self.Bind(wx.EVT_CHECKBOX, self.on_toggle_sharing_status, self.is_public_checkbox)
+        self.Bind(wx.EVT_CHECKBOX, self.on_toggle_sharing_status, self.is_private_checkbox)
 
         # create input for keywords
         self.keywords_input = WxHelper.GetTextInput(self.panel, '')
@@ -1090,100 +1095,94 @@ class VisualH2OWindow(wx.Frame):
         # keywordIcon.SetToolTip(keywordIconToolTip)
         self.keywords_input.SetToolTip(keywordIconToolTip)
 
-        resourceManagementLabel = self.create_gui_label('Resource Management:')
+        # resourceManagementLabel = self.create_gui_label('Resource Management:')
+        self.update_keywords_btn = WxHelper.GetButton(self, self.panel, "Update Keywords",
+                                                      self.on_click_update_keywords)
 
         leftSizer.Add(fundingAgencyLabel, pos=(0, 0), span=(1, 1), flag=text_flags)
-        leftSizer.Add(self.resource_funding_agency_input, pos=(0, 1), span=(1, 2), flag=wx.GROW)
+        leftSizer.Add(self.resource_funding_agency_input, pos=(0, 1), span=(1, 3), flag=wx.GROW)
 
         leftSizer.Add(agencyWebsiteLabel, pos=(1, 0), span=(1, 1), flag=text_flags)
-        leftSizer.Add(self.resource_agency_website_input, pos=(1, 1), span=(1, 2), flag=wx.GROW)
+        leftSizer.Add(self.resource_agency_website_input, pos=(1, 1), span=(1, 3), flag=wx.GROW)
 
         leftSizer.Add(awardTitleLabel, pos=(2, 0), span=(1, 1), flag=text_flags)
-        leftSizer.Add(self.resource_award_title_input, pos=(2, 1), span=(1, 2), flag=wx.GROW)
+        leftSizer.Add(self.resource_award_title_input, pos=(2, 1), span=(1, 3), flag=wx.GROW)
 
         leftSizer.Add(awardNumberLabel, pos=(3, 0), span=(1, 1), flag=text_flags)
-        leftSizer.Add(self.resource_award_number_input, pos=(3, 1), span=(1, 2), flag=wx.GROW)
+        leftSizer.Add(self.resource_award_number_input, pos=(3, 1), span=(1, 3), flag=wx.GROW)
 
-        leftSizer.Add(visibilityLabel, pos=(4, 0), span=(1, 1), flag=text_flags)
-        leftSizer.Add(self.is_public_checkbox, pos=(4, 1), span=(1, 1), flag=wx.ALIGN_LEFT)
-        leftSizer.Add(self.is_private_checkbox, pos=(4, 2), span=(1, 1), flag=wx.ALIGN_LEFT)
+        leftSizer.Add(keywordsLabel, pos=(4, 0), span=(1, 1), flag=text_flags)
+        leftSizer.Add(self.keywords_input, pos=(4, 1), span=(1, 2), flag=wx.GROW)
+        leftSizer.Add(self.update_keywords_btn, pos=(4, 3), span=(1, 1))
 
-        leftSizer.Add(keywordsLabel, pos=(5, 0), span=(1, 1), flag=text_flags)
-        leftSizer.Add(self.keywords_input, pos=(5, 1), span=(1, 2), flag=wx.GROW)
-        # leftSizer.Add(keywordIcon, pos=(5, 3), span=(1, 1))
+        leftSizer.Add(visibilityLabel, pos=(5, 0), span=(1, 1), flag=text_flags)
+        leftSizer.Add(self.is_public_checkbox, pos=(5, 1), span=(1, 1), flag=wx.ALIGN_LEFT)
+        leftSizer.Add(self.is_private_checkbox, pos=(5, 2), span=(1, 1), flag=wx.ALIGN_LEFT)
 
         leftSizer.AddGrowableCol(2)
 
         """
         Action Buttons
         """
-        self.remove_files_button = WxHelper.GetButton(self, self.panel, "Delete Resource Files",
-                                                      self._delete_files_clicked)
-        self.update_resource_button = WxHelper.GetButton(self, self.panel, "Update Resource", self.on_click_update)
-
-        sizer.Add(resourceManagementLabel, pos=(3, 0), span=(1, 1))
-        sizer.Add(self.remove_files_button, pos=(4, 0), span=(1, 1), flag=wx.ALIGN_CENTER)
-        # sizer.Add(self.set_resource_visibility_button, pos=(4, 1), span=(1, 1), flag=wx.ALIGN_CENTER)
-        sizer.Add(self.update_resource_button, pos=(4, 1), span=(1, 1), flag=wx.ALIGN_CENTER)
+        # self.remove_files_button = WxHelper.GetButton(self, self.panel, "Delete Resource Files",
+        #                                               self._delete_files_clicked)
+        #
+        # sizer.Add(self.remove_files_button, pos=(4, 0), span=(1, 1), flag=wx.ALIGN_CENTER)
 
         self.resourceUIController = UIController(inputs=[self.resource_abstract_input, self.keywords_input],
-                                                 buttons=[self.remove_files_button,
-                                                          self.update_resource_button],
+                                                 buttons=[self.update_keywords_btn],
                                                  dropdowns=[self.hs_resource_choice],
                                                  checkboxes=[self.is_public_checkbox, self.is_private_checkbox])
 
-    def on_click_set_visibility(self, event):
-        wait = wx.BusyCursor()
+    def on_toggle_sharing_status(self, event):
 
-        resource = self._get_selected_resource()  # type: HydroShareResource
-        if resource is not None:
-            self.H2OService.ActiveHydroshare.makePublic(resource, public=not resource.public)
-            wx.CallAfter(pub.sendMessage, 'resource.set_visibility')
+        if event.Id == self.is_public_checkbox.Id:
+            public = self.is_public_checkbox.GetValue()
+        else:
+            public = not self.is_private_checkbox.GetValue()
 
-    def __onSetVisibility(self):
-        self.populate_resource_fields(self._get_selected_resource())
+        rsrc = self._get_selected_resource()
 
-    def on_check_is_public(self, event):
-        checked = self.is_public_checkbox
-        self.is_private_checkbox.SetValue(not checked)
-        self.check_if_dirty()
+        if public and not self.hasKeywords(rsrc):
 
-    def on_check_is_private(self, event):
-        checked = self.is_private_checkbox
-        self.is_public_checkbox.SetValue(not checked)
-        self.check_if_dirty()
+            self.is_public_checkbox.SetValue(False)
+            self.is_private_checkbox.SetValue(True)
 
-    def on_change_keywords_input(self, event):
-        self.check_if_dirty()
+            message = "Keywords are required to make the resource public.\n"
+            self.Warn(message)
+        elif public:
+            self.is_public_checkbox.SetValue(True)
+            self.is_private_checkbox.SetValue(False)
 
-    def check_if_dirty(self):
-        is_dirty = False
+            self.set_resource_sharing_status(rsrc, True)
+        else:
+            self.is_public_checkbox.SetValue(False)
+            self.is_private_checkbox.SetValue(True)
 
-        # First check if the sharing status has changed
-        is_dirty = self.is_dirty_sharing_status()
+            self.set_resource_sharing_status(rsrc, False)
 
-        # Second check if the text in 'keywords_input' has changed. If is_dirty is True,
-        # there is no need to check.
-        if not is_dirty:
-            is_dirty = self.is_dirty_keywords()
+    def set_resource_sharing_status(self, resource, public):  # type: (HydroShareResource, bool) -> None
+        busy = wx.BusyCursor()
+        self.H2OService.ActiveHydroshare.makePublic(resource, public=public)
+        wx.CallAfter(pub.sendMessage, 'resource.update')
 
-        # Enable/disable the Update button
-        self.update_resource_button.Enable(is_dirty)
+    def hasKeywords(self, resource):  # (H2OManagedResource|HydroShareResource) -> bool
+        return len(getattr(resource, 'keywords')) > 0
 
-    def is_dirty_sharing_status(self):
+    def on_change_keywords_input(self, event=None):
+        is_dirty = self.is_dirty_keywords()
 
-        if self.clean_resource is None:
-            # The resource has not been created, so carry on!
-            return True
-
-        pub_to_priv = self.clean_resource.public and self.is_public_checkbox.GetValue()
-        priv_to_pub = not self.clean_resource.public and self.is_private_checkbox.GetValue()
-        return not (pub_to_priv or priv_to_pub)
+        # Enable/disable the 'Update Keywords' button
+        self.update_keywords_btn.Enable(is_dirty)
 
     def is_dirty_keywords(self):
         """
         :return: True if keywords are dirty
         """
+
+        if not self.clean_resource:
+            return False
+
         curr_keywords = self.keywords_input.GetValue()
 
         if not len(curr_keywords):
@@ -1206,51 +1205,34 @@ class VisualH2OWindow(wx.Frame):
         isdirty = set(dirty_keywords) != set(clean_keywords)
         return isdirty
 
-    def on_click_update(self, event):
+    def on_click_update_keywords(self, event):
         """
-        Handler for updating metadata elements for the currently selected resource.
-
-        !!NOTE: This only updates the resource's Sharing Status and Keywords/Subjects.
+            Handler for updating the currently selected resource's keywords.
         """
 
-        # Resources can only be made public if they have Subjects/Keywords. If this is not the
-        # case, warn the user before updating.
-        if self.is_public_checkbox.GetValue() and self.keywords_input.GetValue() == '':
+        wait = wx.BusyCursor()
 
-            message = 'Keywords are required to make the resource public.\n\n'\
-                      + 'Please add keywords or make the resource private.'
-            self.Warn(message)
+        resource = self._get_selected_resource()
+        if resource is not None:
+            if self.is_dirty_keywords():
+                res = self.H2OService.ActiveHydroshare.updateKeywords(resource, self.keywords_input.GetValue().split(','))
 
-        else:
+                resource.subjects = []
 
-            wait = wx.BusyCursor()
+                for value in res.get('subjects', []):
+                    if isinstance(value, dict):
+                        resource.subjects.append(value.get('value'))
+                    elif isinstance(value, str):
+                        resource.subjects.append(value)
 
-            resource = self._get_selected_resource()
-            if resource is not None:
-
-                # Keywords must be updated first, since the sharing status may have also changed
-                if self.is_dirty_keywords():
-                    res = self.H2OService.ActiveHydroshare.updateKeywords(resource, self.keywords_input.GetValue().split(','))
-
-                    resource.subjects = []
-
-                    for value in res.get('subjects', []):
-                        if isinstance(value, dict):
-                            resource.subjects.append(value.get('value'))
-                        elif isinstance(value, str):
-                            resource.subjects.append(value)
-
-                # After the keywords have updated, update the sharing status if needed
-                if self.is_dirty_sharing_status():
-                    self.H2OService.ActiveHydroshare.makePublic(resource, public=not resource.public)
-
-                self.clean_resource = copy.copy(resource)
-
-                wx.CallAfter(pub.sendMessage, 'resource.update')
+            wx.CallAfter(pub.sendMessage, 'resource.update')
 
     def __onUpdateResource(self):
         resource = self._get_selected_resource()
+        self.clean_resource = copy.copy(resource)
+
         self.populate_resource_fields(resource)
+
         r_url = 'https://www.hydroshare.org/resource/{}/'.format(resource.id)
         self.on_log_print('Resource successfully updated at {url}'.format(url=r_url))
 
@@ -1303,3 +1285,8 @@ class VisualH2OWindow(wx.Frame):
             if series_id in self.h2o_series_dict:
                 series[series_id] = self.h2o_series_dict[series_id]
         return series
+
+    def _background_thread(self, func, *args, **kwargs):
+        t = threading.Thread(target=func, args=args, kwargs=kwargs)
+        t.setDaemon(True)
+        t.start()

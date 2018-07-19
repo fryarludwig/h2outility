@@ -139,7 +139,7 @@ class HydroShareResource:
 
 
 class ResourceTemplate:
-    def __init__(self, values=None):
+    def __init__(self, **kwargs):
         self.template_name = ""
         self.title = ""
         self.abstract = ""
@@ -149,14 +149,22 @@ class ResourceTemplate:
         self.award_title = ""
         self.award_number = ""
 
-        if values is not None:
-            self.template_name = values['name'] if 'name' in values else ""
-            self.title = values['resource_name'] if 'resource_name' in values else ""
-            self.abstract = values['abstract'] if 'abstract' in values else ""
-            self.funding_agency = values['funding_agency'] if 'funding_agency' in values else ""
-            self.agency_url = values['agency_url'] if 'agency_url' in values else ""
-            self.award_title = values['award_title'] if 'award_title' in values else ""
-            self.award_number = values['award_number'] if 'award_number' in values else ""
+        if 'name' in kwargs:
+            self.template_name = kwargs.pop('name')
+        if 'resource_name' in kwargs:
+            self.title = kwargs.pop('resource_name')
+        if 'abstract' in kwargs:
+            self.abstract = kwargs.pop('abstract')
+        if 'funding_agency' in kwargs:
+            self.funding_agency = kwargs.pop('funding_agency')
+        if 'agency_url' in kwargs:
+            self.agency_url = kwargs.pop('agency_url')
+        if 'award_title' in kwargs:
+            self.award_title = kwargs.pop('award_title')
+        if 'award_number' in kwargs:
+            self.award_number = kwargs.pop('award_number')
+        if 'keywords' in kwargs:
+            self.keywords = kwargs.pop('keywords').split(',')
 
     def get_metadata(self):
         return str([{'funding_agencies': {'agency_name': self.funding_agency,
@@ -169,8 +177,8 @@ class ResourceTemplate:
 
 
 class HydroShareUtilityException(Exception):
-    def __init__(self, args):
-        super(HydroShareUtilityException, self).__init__(args)
+    def __init__(self, *args):
+        super(HydroShareUtilityException, self).__init__(*args)
 
 
 class HydroShareUtility:
@@ -502,10 +510,9 @@ class HydroShareUtility:
             )
 
             for reskey, fakey in fundingagency_attr_map:
-                """
-                reskey - resource attribute name
-                fakey - funding agency attribute name
-                """
+                # reskey - resource attribute name
+                # fakey - funding agency attribute name
+
                 value = getattr(resource, reskey).strip()
 
                 if len(value):
@@ -513,14 +520,6 @@ class HydroShareUtility:
 
             if len(fundingagency.keys()):
                 metadata.append({'fundingagency': fundingagency})
-
-            # metadata = [{'fundingagency': {
-            #         'agency_name': resource.funding_agency,
-            #         'award_title': resource.award_title,
-            #         'award_number': resource.award_number,
-            #         'agency_url': resource.agency_url
-            #     }
-            # }]
 
             resource_id = self.client.createResource(resource_type='CompositeResource',
                                                      title=resource.title,

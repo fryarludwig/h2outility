@@ -168,6 +168,24 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         award_number_sizer.Add(self.award_number_input, flag=wx.ALL | wx.EXPAND, border=5)
         main_sizer.Add(award_number_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
+
+        """
+        Keywords input
+        """
+        self.keywords_label = wx.StaticText(self, wx.ID_ANY, 'Keywords', wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTER)
+        self.keywords_label.Wrap(-1)
+        self.keywords_label.SetMinSize(label_size)
+
+        self.keywords_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
+        self.keywords_input.SetMinSize(input_size)
+        self.keywords_input.SetToolTip(wx.ToolTip('Enter keywords as a comma seperated\n'
+                                                  'list (i.e. "Keyword 1, Keyword 2", etc.)'))
+
+        keywords_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        keywords_sizer.Add(self.keywords_label, flag=wx.ALL | wx.EXPAND, border=5)
+        keywords_sizer.Add(self.keywords_input, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(keywords_sizer, flag=wx.ALL | wx.EXPAND, border=5)
+
         bSizer211 = wx.BoxSizer(wx.VERTICAL)
         bSizer20 = wx.BoxSizer(wx.HORIZONTAL)
         bSizer211.Add(bSizer20, 1, wx.EXPAND, border=5)
@@ -324,4 +342,5 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
                     name=self.template_name_input.Value if not self.create_new else '',
                     resource_name=self.resource_name_input.Value, abstract=self.resource_abstract_input.Value,
                     funding_agency=self.funding_agency_input.Value, agency_url=self.agency_url_input.Value,
-                    award_title=self.award_title_input.Value, award_number=self.award_number_input.Value)
+                    award_title=self.award_title_input.Value, award_number=self.award_number_input.Value,
+                    keywords=self.keywords_input.GetValue())
