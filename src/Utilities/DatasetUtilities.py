@@ -5,7 +5,7 @@ from time import sleep
 import pandas
 
 from Common import *
-from GAMUTRawData.odmdata import QualityControlLevel, Series, Site, Source, Qualifier
+from GAMUTRawData.odmdata import QualityControlLevel, Series, Site, Source, Qualifier, Variable, Method
 from GAMUTRawData.odmservices import SeriesService, ServiceManager
 
 this_file = os.path.realpath(__file__)
@@ -148,7 +148,6 @@ def createFile(filepath):
 
 def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_id, methods, variables, starting_date,
                            year=None):
-    csv_table = None
     q_list = []
     censor_list = []
 
@@ -159,13 +158,8 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
                                                          starting_date=starting_date,
                                                          chunk_size=APP_SETTINGS.QUERY_CHUNK_SIZE,
                                                          timeout=APP_SETTINGS.DATAVALUES_TIMEOUT)
-    if dataframe is None:
-        pass
 
-    elif len(dataframe) == 0:
-        pass
-
-    elif qc_id == 0 or len(variables) != 1 or len(methods) != 1:
+    if qc_id == 0 or len(variables) != 1 or len(methods) != 1:
         csv_table = pandas.pivot_table(dataframe,
                                        index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
                                        columns='VariableCode',
@@ -173,17 +167,25 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
         del dataframe
 
     else:
-        # Get the qualifiers that we use in this series, merge it with our DataValue set
-        qualifier_columns = ["QualifierID", "QualifierCode", "QualifierDescription"]
+        method = next(iter(methods))
+        variable = next(iter(variables))
+
         q_list = [[q.id, q.code, q.description] for q in
-                  series_service.get_qualifiers_by_series_details(site_id, qc_id, source_id, methods[0], variables[0])]
-        q_df = pandas.DataFrame(data=q_list, columns=qualifier_columns)
+                  series_service.get_qualifiers_by_series_details(site_id, qc_id, source_id, method, variable)]
+
+        # Get the qualifiers that we use in this series, merge it with our DataValue set
+        q_df = pandas.DataFrame(data=q_list, columns=["QualifierID", "QualifierCode", "QualifierDescription"])
+
         csv_table = dataframe.merge(q_df, how='left', on="QualifierID")  # type: pandas.DataFrame
+
         del dataframe
+
         csv_table.set_index(["LocalDateTime", "UTCOffset", "DateTimeUTC"], inplace=True)
         for column in csv_table.columns.tolist():
-            if column not in ["DataValue", "CensorCode", "QualifierCode"]:
+
+            if column not in ["DataValue", "CensorCode", "QualifierCode", 'VariableCode']:
                 csv_table.drop(column, axis=1, inplace=True)
+
         csv_table.rename(columns={"DataValue": series_list[0].variable.code}, inplace=True)
 
         if 'CensorCode' in csv_table:
@@ -225,8 +227,7 @@ def BuildCsvFile(series_service, series_list, year=None, failed_files=list()):  
             variables = list(variables)
             methods = list(methods)
 
-            # base_name = '{}{}_'.format(APP_SETTINGS.DATASET_DIR, site.code)
-            base_name = os.path.join(APP_SETTINGS.DATASET_DIR, '{}_'.format(site.code))
+            base_name = os.path.join(APP_SETTINGS.DATASET_DIR, '%s_' % site.code)
             if len(variables) == 1:
                 base_name += '{}_'.format(series_list[0].variable_code)
             base_name += 'QC_{}_Source_{}'.format(qc.code, source.id)
@@ -314,6 +315,7 @@ def WriteSeriesToFile(csv_name, dataframe, headers):
         # Write data to CSV file
         print('Writing datasets to file: {}'.format(csv_name))
         file_out.write(headers)
+        import csv
         dataframe.to_csv(file_out)
         file_out.close()
     return True
@@ -478,8 +480,24 @@ class SourceInfo:
         return '# {}: {} \n'.format(title, value)
 
 
-class ExpandedVariableData:
+class VariableFormatter(object):
+    """
+    Abstract class - basically here to make it clear inherited classes
+    need to implement the methods in this class.
+    """
+    def __init__(self):
+        pass
+
+    def formatHelper(self, label, value):
+        raise NotImplemented
+
+    def printToFile(self):
+        raise NotImplemented
+
+
+class ExpandedVariableData(VariableFormatter):
     def __init__(self, var, method):
+        super(ExpandedVariableData, self).__init__()
         self.varCode = var.code
         self.varName = var.name
         self.valueType = var.value_type
@@ -526,11 +544,16 @@ class ExpandedVariableData:
             title = title.encode('utf-8').strip()
         if isinstance(var, unicode):
             var = var.encode('utf-8').strip()
+
+            if ',' in var:
+                return '"# {}: {}"\n'.format(title, var)
+
         return '# {}: {} \n'.format(title, var)
 
 
-class CompactVariableData:
+class CompactVariableData(VariableFormatter):
     def __init__(self):
+        super(CompactVariableData, self).__init__()
         self.var_dict = {}
         self.method_dict = {}
 
@@ -540,37 +563,46 @@ class CompactVariableData:
     def printToFile(self):
         # if not isinstance(vars_to_print, str) or len(vars_to_print) == 0:
         #     return ""
-        formatted = ""
-        formatted += "# Variable and Method Information\n"
-        formatted += "# ---------------------------\n"
-        for variable, method in self.var_dict.iteritems():
+        header = "# Variable and Method Information\n"
+        header += "# ---------------------------\n"
+        # formatted = ""
+        # formatted += "# Variable and Method Information\n"
+        rows = []
+        for variable, method in self.var_dict.iteritems():  # type: (Variable, Method)
+
+            definitions = []
+
             if method.link is None:
                 tempVarMethodLink = "None"
             else:
                 tempVarMethodLink = method.link if method.link[-1:].isalnum() else method.link[-1:]
 
-            formatted += "# "
-            formatted += self.formatHelper("VariableCode", variable.code)
-            formatted += self.formatHelper("VariableName", variable.name)
-            formatted += self.formatHelper("ValueType", variable.value_type)
-            formatted += self.formatHelper("DataType", variable.data_type)
-            formatted += self.formatHelper("GeneralCategory", variable.general_category)
-            formatted += self.formatHelper("SampleMedium", variable.sample_medium)
-            formatted += self.formatHelper("VariableUnitsName", variable.variable_unit.name)
-            formatted += self.formatHelper("VariableUnitsType", variable.variable_unit.type)
-            formatted += self.formatHelper("VariableUnitsAbbreviation", variable.variable_unit.abbreviation)
-            formatted += self.formatHelper("NoDataValue", variable.no_data_value)
-            formatted += self.formatHelper("TimeSupport", variable.time_support)
-            formatted += self.formatHelper("TimeSupportUnitsAbbreviation", variable.time_unit.abbreviation)
-            formatted += self.formatHelper("TimeSupportUnitsName", variable.time_unit.name)
-            formatted += self.formatHelper("TimeSupportUnitsType", variable.time_unit.type)
-            formatted += self.formatHelper("MethodDescription", method.description)
-            formatted += self.formatHelper("MethodLink", tempVarMethodLink)[:-2] + "\n"
-        return formatted
+            definitions.append(self.formatHelper("VariableCode", variable.code))
+            definitions.append(self.formatHelper("VariableName", variable.name))
+            definitions.append(self.formatHelper("ValueType", variable.value_type))
+            definitions.append(self.formatHelper("DataType", variable.data_type))
+            definitions.append(self.formatHelper("GeneralCategory", variable.general_category))
+            definitions.append(self.formatHelper("SampleMedium", variable.sample_medium))
+            definitions.append(self.formatHelper("VariableUnitsName", variable.variable_unit.name))
+            definitions.append(self.formatHelper("VariableUnitsType", variable.variable_unit.type))
+            definitions.append(self.formatHelper("VariableUnitsAbbreviation", variable.variable_unit.abbreviation))
+            definitions.append(self.formatHelper("NoDataValue", variable.no_data_value))
+            definitions.append(self.formatHelper("TimeSupport", variable.time_support))
+            definitions.append(self.formatHelper("TimeSupportUnitsAbbreviation", variable.time_unit.abbreviation))
+            definitions.append(self.formatHelper("TimeSupportUnitsName", variable.time_unit.name))
+            definitions.append(self.formatHelper("TimeSupportUnitsType", variable.time_unit.type))
+            definitions.append(self.formatHelper("MethodDescription", method.description))
+            definitions.append(self.formatHelper("MethodLink", tempVarMethodLink)[:-2])
+
+            rows.append(definitions)
+
+        definitions = "\n".join(['"# %s"' % ' | '.join(row) for row in rows])
+
+        return '%s%s' % (header, definitions)
 
     def formatHelper(self, title, var):
         if isinstance(title, unicode):
             title = title.encode('utf-8').strip()
         if isinstance(var, unicode):
             var = var.encode('utf-8').strip()
-        return '{}: {} | '.format(title, var)
+        return '{0}: {1}'.format(title, var)

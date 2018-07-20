@@ -1,16 +1,12 @@
-from functools import partial
-
 import datetime
 import threading
 from Queue import Queue
 import copy
 
-import wx
 import wx.dataview
 import wx.grid
 
 from wx.lib.pubsub import pub
-# from pubsub import pub
 
 from hs_restclient import HydroShareException, HydroShareNotFound
 
@@ -19,11 +15,11 @@ from Utilities.HydroShareUtility import HydroShareAccountDetails, HydroShareUtil
 from Common import *
 from Utilities.DatasetUtilities import OdmDatasetConnection, H2OManagedResource
 from Utilities.H2OServices import H2OService
-from Utilities.H2OSeries import H2OSeries, OdmSeriesHelper
+from Utilities.H2OSeries import H2OSeries, OdmSeriesHelper, Series
 from GAMUTRawData.odmservices import ServiceManager
 from EditConnectionsDialog import DatabaseConnectionDialog
 from EditAccountsDialog import HydroShareAccountDialog
-from WxUtilities import WxHelper, Orientation, PADDING, ALIGN
+from WxUtilities import WxHelper, PADDING, ALIGN
 from ResourceTemplatesDialog import HydroShareResourceTemplateDialog
 from InputValidator import *
 from GuiComponents.UIController import UIController
@@ -33,6 +29,7 @@ service_manager = ServiceManager()
 
 
 class CHOICE_DEFAULTS:
+
     NEW_TEMPLATE_CHOICE = 'Create a new resource template'
     SELECT_TEMPLATE_CHOICE = 'Select a resource template'
     RESOURCE_STR = '{:<130} (ID {})'
@@ -40,6 +37,9 @@ class CHOICE_DEFAULTS:
     MANAGED_RESOURCES = '      -- {} resource{} managed by H2O --'
     UNMANAGED_RESOURCES = '      -- {} resource{} not managed by H2O --'
     CONNECT_TO_HYDROSHARE = 'Please connect to a HydroShare account'
+
+    def __init__(self):
+        pass
 
 
 HS_RES_STR = lambda resource: CHOICE_DEFAULTS.RESOURCE_STR.format(resource.title, resource.id)
@@ -54,13 +54,12 @@ class VisualH2OWindow(wx.Frame):
     selected_account_name = None
 
 
-
-    def __init__(self, parent, id, title):
+    def __init__(self, parent, id_, title):
         ###########################################
         # Declare/populate variables, wx objects  #
         ###########################################
 
-        super(VisualH2OWindow, self).__init__(parent, id, title)
+        super(VisualH2OWindow, self).__init__(parent, id_, title)
 
         APP_SETTINGS.GUI_MODE = True
 
@@ -71,10 +70,10 @@ class VisualH2OWindow(wx.Frame):
         h2o_subs = self._setup_h2o_subscriptions()
         self.H2OService = H2OService(subscriptions=h2o_subs)
 
-        self.odm_series_dict = {}  # type: dict[str, Series]
-        self.h2o_series_dict = {}  # type: dict[str, H2OSeries]
+        self.odm_series_dict = {}  # type: dict{str, Series}
+        self.h2o_series_dict = {}  # type: dict{str, H2OSeries}
 
-        self._resources = None  # type: dict[str, HydroShareResource]
+        self._resources = None  # type: dict{str, HydroShareResource}
         self.clean_resource = None
 
         # Widgets
@@ -85,7 +84,7 @@ class VisualH2OWindow(wx.Frame):
 
         # just technicalities, honestly
         ## Rrriiiggghhhttt, calling the inherited class' init function is just a technicality...
-        super(wx.Frame, self).__init__(parent, id, title, style=wx.DEFAULT_FRAME_STYLE, size=self.ORIGINAL_SIZE)
+        super(wx.Frame, self).__init__(parent, id_, title, style=wx.DEFAULT_FRAME_STYLE, size=self.ORIGINAL_SIZE)
 
         iconpath = os.path.abspath('./visual.ico')
         if os.path.isfile(iconpath):
@@ -171,7 +170,7 @@ class VisualH2OWindow(wx.Frame):
     def on_save_resource_template(self, result=None):
         if result is None:
             return
-        template = ResourceTemplate(result)
+        template = ResourceTemplate(**result)
         self.H2OService.ResourceTemplates.pop(result['selector'], None)
         self.H2OService.ResourceTemplates[template.template_name] = template
         self.update_choice_controls()

@@ -502,8 +502,8 @@ class SeriesService():
                                                                    Series.variable_id == variable_id,
                                                                    Series.quality_control_level_id == qc_level_id,
                                                                    Series.source_id == source_id,
-                                                                   Series.method_id == method_id).first()
-            return query_result
+                                                                   Series.method_id == method_id)
+            return query_result.first()
         except Exception as e:
             print e
             return []

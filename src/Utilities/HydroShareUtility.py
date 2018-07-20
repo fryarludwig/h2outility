@@ -138,33 +138,32 @@ class HydroShareResource:
         return metadata
 
 
-class ResourceTemplate:
-    def __init__(self, **kwargs):
-        self.template_name = ""
-        self.title = ""
-        self.abstract = ""
-        self.keywords = []
-        self.funding_agency = ""
-        self.agency_url = ""
-        self.award_title = ""
-        self.award_number = ""
+class ResourceTemplate(object):
 
-        if 'name' in kwargs:
-            self.template_name = kwargs.pop('name')
-        if 'resource_name' in kwargs:
-            self.title = kwargs.pop('resource_name')
-        if 'abstract' in kwargs:
-            self.abstract = kwargs.pop('abstract')
-        if 'funding_agency' in kwargs:
-            self.funding_agency = kwargs.pop('funding_agency')
-        if 'agency_url' in kwargs:
-            self.agency_url = kwargs.pop('agency_url')
-        if 'award_title' in kwargs:
-            self.award_title = kwargs.pop('award_title')
-        if 'award_number' in kwargs:
-            self.award_number = kwargs.pop('award_number')
-        if 'keywords' in kwargs:
-            self.keywords = kwargs.pop('keywords').split(',')
+    def __init__(self, *args, **kwargs):
+
+        self.template_name = kwargs.get('name', '')
+        self.title = kwargs.get('resource_name', '')
+        self.abstract = kwargs.get('abstract', '')
+        self.funding_agency = kwargs.get('funding_agency', '')
+        self.agency_url = kwargs.get('agency_url', '')
+        self.award_title = kwargs.get('award_title', '')
+        self.award_number = kwargs.get('award_number', '')
+        self.keywords = kwargs.get('keywords', [])
+
+        for arg in args:
+            if isinstance(arg, dict):
+                for key, value in arg.iteritems():
+                    setattr(self, key, value)
+
+        self.__parse_keywords()
+
+    def __parse_keywords(self):
+        if isinstance(self.keywords, unicode):
+            self.keywords = str(self.keywords)
+
+        if isinstance(self.keywords, list):
+            self.keywords = self.keywords.split(',')
 
     def get_metadata(self):
         return str([{'funding_agencies': {'agency_name': self.funding_agency,
@@ -240,13 +239,20 @@ class HydroShareUtility:
         :param confirm_delete: If true, requires input that confirm file should be deleted
         :type confirm_delete: bool
         """
+        from collections import defaultdict
         re_breakdown = re.compile(regex, re.I)
-        resource_files = self.getResourceFileList(resource_id)
+        resource_files = self.getResourceFileList(resource_id)  # type: [dict]
         duplicates_list = []
         for remote_file in resource_files:
-            results = re_breakdown.match(remote_file['url'])  # Check the file URL for expected patterns
-            temp_dict = {'duplicated': ''} if results is None else results.groupdict()  # type: dict
-            if len(temp_dict['duplicated']) > 0:  # A non-duplicated file will match with length 0
+            url = remote_file.get('url', '')
+            results = re_breakdown.match(url)  # Check the file URL for expected patterns
+
+            temp_dict = defaultdict(lambda: '')  # type: dict
+
+            if results:
+                temp_dict['duplicated'] = results.groupdict()
+
+            if len(temp_dict.get('duplicated', '')):  # A non-duplicated file will match with length 0
                 duplicates_list.append(temp_dict)  # Save the file name so we can remove it later
 
         for file_detail in duplicates_list:

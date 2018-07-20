@@ -166,7 +166,11 @@ class H2OService:
                                                                                   h2o_series.SourceID,
                                                                                   h2o_series.MethodID)
                             if result_series is None:
-                                print('Unable to fetch ODM series {} from database {}'.format(h2o_series, db_dame))
+                                msg = 'Error: Unable to fetch ODM series {} from database {}'.format(
+                                    h2o_series, db_dame)
+
+                                self.NotifyVisualH2O('Operations_Stopped', msg)
+
                             else:
                                 odm_series_list.append(result_series)
 
