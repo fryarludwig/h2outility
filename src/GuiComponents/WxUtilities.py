@@ -18,14 +18,19 @@ class GRID_SELECTION_MODES:
 
 
 class WxHelper:
+
+    def __init__(self):
+        pass
+
     class SeriesGrid(wx.grid.Grid):
-        LABELS = [(u'Id', 30),
-                  (u'Site Code', 100),
-                  (u'Site Name', 150),
-                  (u'Variable Name', 150),
-                  (u'QC Code', 50),
-                  (u'Source Description', 150),
-                  (u'Method Description', 150)]
+        LABELS = [('Id', 30),
+                  ('Site Code', 100),
+                  ('Site Name', 150),
+                  ('Variable Name', 100),
+                  ('Variable Code', 100),
+                  ('QC Code', 50),
+                  ('Source Description', 150),
+                  ('Method Description', 150)]
 
         SERIES_COL = {
             u'Site': 1,
@@ -92,8 +97,9 @@ class WxHelper:
                 sort_value = self.GetCellValue(i, column_number)
                 try:
                     sort_value = float(sort_value)
-                except:  # Turns out this is almost as fast an if statement, and the if statement wasn't reliable enough
+                except ValueError:
                     pass
+
                 sorted_list.append((sort_value, self.GetValuesForRow(i)))
 
             sorted_list.sort(key=lambda x: x[0], reverse=sort_inverted)
@@ -121,8 +127,8 @@ class WxHelper:
 
         def AppendSeries(self, series):
             values = [series.id, series.site_code, series.site_name, series.variable_name,
-                      series.quality_control_level_code, series.source_description,
-                      series.method_description]
+                      series.variable_code, series.quality_control_level_code,
+                      series.source_description, series.method_description]
             self.AddGridRow(values)
 
         def InsertSeriesList(self, series_list, do_sort=True):
