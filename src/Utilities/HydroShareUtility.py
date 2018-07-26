@@ -140,6 +140,8 @@ class HydroShareResource:
 
 class ResourceTemplate(object):
 
+    KW_DELIMITER = ','
+
     def __init__(self, *args, **kwargs):
 
         self.template_name = kwargs.get('name', '')
@@ -156,14 +158,23 @@ class ResourceTemplate(object):
                 for key, value in arg.iteritems():
                     setattr(self, key, value)
 
-        self.__parse_keywords()
+        self.keywords = self.__parse_keywords(self.keywords)
 
-    def __parse_keywords(self):
-        if isinstance(self.keywords, unicode):
-            self.keywords = str(self.keywords)
-
+    @property
+    def subjects(self):
         if isinstance(self.keywords, list):
-            self.keywords = self.keywords.split(',')
+            return self.keywords
+        return self.__parse_keywords(self.keywords)
+
+    def __parse_keywords(self, keywords):
+        if not isinstance(keywords, list):
+
+            if isinstance(keywords, set):
+                keywords = list(keywords)
+            else:
+                keywords = str(keywords).split(self.KW_DELIMITER)
+
+        return keywords
 
     def get_metadata(self):
         return str([{'funding_agencies': {'agency_name': self.funding_agency,
@@ -530,7 +541,7 @@ class HydroShareUtility:
             resource_id = self.client.createResource(resource_type='CompositeResource',
                                                      title=resource.title,
                                                      abstract=resource.abstract,
-                                                     keywords=list(resource.keywords),
+                                                     keywords=resource.keywords,
                                                      metadata=json.dumps(metadata, encoding='ascii'))
             hs_resource = HydroShareResource({'resource_id': resource_id})
             self.getMetadataForResource(hs_resource)
