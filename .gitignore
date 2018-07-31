@@ -8,6 +8,8 @@
 __pycache__
 htmlcov
 
+!connection_details.pyo
+
 # Packages
 *.egg
 *.egg-info
@@ -53,6 +55,7 @@ odm_tools_python.sublime-workspace
 setup/Output/setup.exe
 
 .idea
+.vscode
 
 *.uml
 GAMUT_CSV_Files
@@ -74,3 +77,7 @@ src/temporary_metadata*
 src/GAMUT_CSV_Files_old
 src/resourcemetadata.xml
 src/H2O_dataset_files
+
+build/
+dist/
+VisualUpdater.spec

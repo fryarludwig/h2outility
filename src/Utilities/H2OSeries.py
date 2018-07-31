@@ -114,27 +114,38 @@ class OdmSeriesHelper:
         :returns list[list[H2OSeries]]
         """
         if APP_SETTINGS.VERBOSE:
-            print 'Determining chunking for resource {}'.format(resource)
+            print('Determining chunking for resource {}'.format(resource))
+
         if resource.single_file:  # If we should group into the fewest possible files
+
             chunk_dict = {}
+            # for key, value in resource.selected_series.iteritems():
+            #     pass
+
             for series in resource.selected_series.itervalues():
                 series_tuple = (series.SiteID, series.SourceID, series.QualityControlLevelID)
+
                 if series_tuple not in chunk_dict.keys():
                     chunk_dict[series_tuple] = []
+
                 chunk_dict[series_tuple].append(series)
+
             chunk_list = chunk_dict.values()
+
         else:  # If we should group each into its own file
             chunk_list = [[series] for series in resource.selected_series.itervalues()]
+
         if APP_SETTINGS.VERBOSE:
             for chunk in chunk_list:
-                print 'Chunk: {}'.format(OdmSeriesHelper.SeriesToString(chunk))
+                print('Chunk: {}'.format(OdmSeriesHelper.SeriesToString(chunk)))
+
         return chunk_list
 
     @staticmethod
     def createFile(filepath):
         try:
-            print 'Creating new file {}'.format(filepath)
+            print('Creating new file {}'.format(filepath))
             return open(filepath, 'w')
         except Exception as e:
-            print('---\nIssue encountered while creating a new file: \n{}\n{}\n---'.format(e, e.message))
+            print('---\nIssue encountered while creating a new file: \n{}---'.format(e))
             return None

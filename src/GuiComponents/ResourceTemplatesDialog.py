@@ -10,15 +10,27 @@ from wx.lib.pubsub import pub
 # from pubsub import pub
 from InputValidator import *
 
+from urlparse import urlparse
+import re
+
 
 # noinspection PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,PyPropertyAccess,
 # PyPropertyAccess
 # noinspection PyPropertyAccess,PyPropertyAccess,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal,PyUnusedLocal
 class HydroShareResourceTemplateDialog(wx.Dialog):
     def __init__(self, parent, templates, selected=0, create_selected=False):
+
         title = u'Create a new HydroShare Resource' if create_selected else u"Manage HydroShare Resource Templates"
-        wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=title, pos=wx.DefaultPosition,
+
+        self.dialog = wx.Dialog.__init__(self, parent, id=wx.ID_ANY, title=title, pos=wx.DefaultPosition,
                            size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
+
+        self.urlregex = re.compile(
+            r'^(?:http|ftp)s?://'
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+
         self.templates = templates
         self.create_new = create_selected
         self.SetSizeHints(wx.DefaultSize, wx.DefaultSize)
@@ -156,6 +168,24 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         award_number_sizer.Add(self.award_number_input, flag=wx.ALL | wx.EXPAND, border=5)
         main_sizer.Add(award_number_sizer, flag=wx.ALL | wx.EXPAND, border=5)
 
+
+        """
+        Keywords input
+        """
+        self.keywords_label = wx.StaticText(self, wx.ID_ANY, 'Keywords', wx.DefaultPosition, wx.DefaultSize, wx.ALIGN_CENTER)
+        self.keywords_label.Wrap(-1)
+        self.keywords_label.SetMinSize(label_size)
+
+        self.keywords_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, 0)
+        self.keywords_input.SetMinSize(input_size)
+        self.keywords_input.SetToolTip(wx.ToolTip('Enter keywords as a comma seperated\n'
+                                                  'list (i.e. "Keyword 1, Keyword 2", etc.)'))
+
+        keywords_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        keywords_sizer.Add(self.keywords_label, flag=wx.ALL | wx.EXPAND, border=5)
+        keywords_sizer.Add(self.keywords_input, flag=wx.ALL | wx.EXPAND, border=5)
+        main_sizer.Add(keywords_sizer, flag=wx.ALL | wx.EXPAND, border=5)
+
         bSizer211 = wx.BoxSizer(wx.VERTICAL)
         bSizer20 = wx.BoxSizer(wx.HORIZONTAL)
         bSizer211.Add(bSizer20, 1, wx.EXPAND, border=5)
@@ -238,8 +268,51 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
         event.Skip()
 
     def on_create_clicked(self, event):
-        pub.sendMessage("hs_resource_create", result=self._get_input_as_dict())
-        self.EndModal(True)
+
+        result = self._get_input_as_dict()
+        agwebsite_initial = agwebsite = result.get('agency_url', '')
+
+        error_list = []
+
+        # Make sure the resource has a name
+        if not len(result.get('resource_name', '')):
+            error_list.append("The 'Resource Name' field is required.")
+
+        # If the value for `agency_url` is not empty, validate the URL, otherwise, continue on
+        if len(agwebsite_initial):
+
+            # If the user did not include a scheme for the agency website, use 'http://' as the default
+            if not re.match(r'https?://', agwebsite):
+                result['agency_url'] = 'http://' + result.get('agency_url', '')
+
+            # If `agwebsite` passes the url pattern check, continue on, otherwise
+            # show some sort of validation error
+            if not self.urlregex.match(result.get('agency_url')):
+                error_list.append(
+                    "Agency Website '{}' is an invalid URL.\n\nEnter a valid URL to continue.".format(agwebsite_initial)
+                )
+
+
+        if not len(error_list):
+
+            pub.sendMessage("hs_resource_create", result=result)
+
+            self.EndModal(True)
+
+        else:
+            if len(error_list) > 1:
+                msg = "Please fix the following errors"
+
+                for err in error_list:
+                    msg += "\n\n - {}".format(err)
+
+
+            else:
+                msg = "Error: {}".format(error_list[0])
+
+            wx.MessageBox(msg, parent=self.dialog, caption='Error', style=wx.OK)
+
+
         event.Skip()
 
     def on_selection_changed(self, event=None):
@@ -269,4 +342,5 @@ class HydroShareResourceTemplateDialog(wx.Dialog):
                     name=self.template_name_input.Value if not self.create_new else '',
                     resource_name=self.resource_name_input.Value, abstract=self.resource_abstract_input.Value,
                     funding_agency=self.funding_agency_input.Value, agency_url=self.agency_url_input.Value,
-                    award_title=self.award_title_input.Value, award_number=self.award_number_input.Value)
+                    award_title=self.award_title_input.Value, award_number=self.award_number_input.Value,
+                    keywords=self.keywords_input.GetValue())

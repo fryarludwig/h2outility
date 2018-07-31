@@ -49,6 +49,7 @@ class HydroShareAccountDialog(wx.Dialog):
 
         self.account_name_input1 = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.WORD))
         self.account_name_input1.SetMaxLength(32)
+        self.account_name_input1.SetToolTip(wx.ToolTip('Account nickname (this can be anything).'))
         account_name_sizer1.Add(self.account_name_input1, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
 
         account_name_sizer1.AddGrowableCol(1)
@@ -64,6 +65,7 @@ class HydroShareAccountDialog(wx.Dialog):
 
         self.hs_username_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.USERNAME))
         self.hs_username_input.SetMaxLength(32)
+        self.hs_username_input.SetToolTip(wx.ToolTip('Enter your HydroShare account username.'))
         hs_username_sizer.Add(self.hs_username_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
 
         hs_username_sizer.AddGrowableCol(1)
@@ -78,43 +80,44 @@ class HydroShareAccountDialog(wx.Dialog):
 
         self.hs_password_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), wx.TE_PASSWORD)
         self.hs_password_input.SetMaxLength(32)
+        self.hs_password_input.SetToolTip(wx.ToolTip('Enter your HydroShare account password.'))
         hs_password_sizer.Add(self.hs_password_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
 
         hs_password_sizer.AddGrowableCol(1)
 
         dialog_sizer.Add(hs_password_sizer, 1, wx.EXPAND, 5)
 
-        client_id_sizer = wx.GridBagSizer(7, 7)
-        client_id_sizer.SetFlexibleDirection(wx.BOTH)
-        client_id_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
-
-        self.label5 = wx.StaticText(self, wx.ID_ANY, u"Client ID", wx.DefaultPosition, wx.Size(65, -1), 0)
-        self.label5.Wrap(-1)
-        client_id_sizer.Add(self.label5, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
-
-        self.client_id_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.ALPHANUMERIC))
-        self.client_id_input.SetMaxLength(64)
-        client_id_sizer.Add(self.client_id_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
-
-        client_id_sizer.AddGrowableCol(1)
-
-        dialog_sizer.Add(client_id_sizer, 1, wx.EXPAND, 5)
-
-        client_secret_sizer = wx.GridBagSizer(7, 7)
-        client_secret_sizer.SetFlexibleDirection(wx.BOTH)
-        client_secret_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
-
-        self.label6 = wx.StaticText(self, wx.ID_ANY, u"Secret", wx.DefaultPosition, wx.Size(65, -1), 0)
-        self.label6.Wrap(-1)
-        client_secret_sizer.Add(self.label6, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
-
-        self.client_secret_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.ALPHANUMERIC))
-        self.client_secret_input.SetMaxLength(256)
-        client_secret_sizer.Add(self.client_secret_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
-
-        client_secret_sizer.AddGrowableCol(1)
-
-        dialog_sizer.Add(client_secret_sizer, 1, wx.EXPAND, 5)
+        # client_id_sizer = wx.GridBagSizer(7, 7)
+        # client_id_sizer.SetFlexibleDirection(wx.BOTH)
+        # client_id_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
+        #
+        # self.label5 = wx.StaticText(self, wx.ID_ANY, u"Client ID", wx.DefaultPosition, wx.Size(65, -1), 0)
+        # self.label5.Wrap(-1)
+        # client_id_sizer.Add(self.label5, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
+        #
+        # self.client_id_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.ALPHANUMERIC))
+        # self.client_id_input.SetMaxLength(64)
+        # client_id_sizer.Add(self.client_id_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
+        #
+        # client_id_sizer.AddGrowableCol(1)
+        #
+        # dialog_sizer.Add(client_id_sizer, 1, wx.EXPAND, 5)
+        #
+        # client_secret_sizer = wx.GridBagSizer(7, 7)
+        # client_secret_sizer.SetFlexibleDirection(wx.BOTH)
+        # client_secret_sizer.SetNonFlexibleGrowMode(wx.FLEX_GROWMODE_SPECIFIED)
+        #
+        # self.label6 = wx.StaticText(self, wx.ID_ANY, u"Secret", wx.DefaultPosition, wx.Size(65, -1), 0)
+        # self.label6.Wrap(-1)
+        # client_secret_sizer.Add(self.label6, wx.GBPosition(0, 0), wx.GBSpan(1, 1), wx.ALL, 7)
+        #
+        # self.client_secret_input = wx.TextCtrl(self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.Size(250, -1), 0, validator=CharValidator(PATTERNS.ALPHANUMERIC))
+        # self.client_secret_input.SetMaxLength(256)
+        # client_secret_sizer.Add(self.client_secret_input, wx.GBPosition(0, 1), wx.GBSpan(1, 1), wx.ALIGN_CENTER | wx.ALL | wx.EXPAND, 5)
+        #
+        # client_secret_sizer.AddGrowableCol(1)
+        #
+        # dialog_sizer.Add(client_secret_sizer, 1, wx.EXPAND, 5)
 
         action_button_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -172,12 +175,17 @@ class HydroShareAccountDialog(wx.Dialog):
         self.account_name_input1.SetValue(new_name)
 
     def _get_input_as_dict(self):
+
+        client_id = HydroShareAccountDetails.CLIENT_ID
+        client_secret = HydroShareAccountDetails.CLIENT_SECRET
+
         return dict(selector=self.account_selector_combo.GetStringSelection(),
                     name=self.account_name_input1.Value,
                     user=self.hs_username_input.Value, password=self.hs_password_input.Value,
-                    client_id=self.client_id_input.Value, client_secret=self.client_secret_input.Value)
+                    client_id=client_id, client_secret=client_secret)
 
     def on_test_account_clicked(self, event):
+        busy = wx.BusyCursor()
         pub.sendMessage("hs_auth_test", result=self._get_input_as_dict())
 
     def on_remove_account_clicked(self, event):
@@ -202,11 +210,11 @@ class HydroShareAccountDialog(wx.Dialog):
             self.account_name_input1.SetValue(account.name)
             self.hs_username_input.SetValue(account.username)
             self.hs_password_input.SetValue(account.password)
-            self.client_id_input.SetValue(account.client_id if account.client_id is not None else "")
-            self.client_secret_input.SetValue(account.client_secret if account.client_secret is not None else "")
+            # self.client_id_input.SetValue(account.client_id if account.client_id is not None else "")
+            # self.client_secret_input.SetValue(account.client_secret if account.client_secret is not None else "")
         else:
             self.account_name_input1.SetValue("")
             self.hs_username_input.SetValue("")
             self.hs_password_input.SetValue("")
-            self.client_id_input.SetValue("")
-            self.client_secret_input.SetValue("")
+            # self.client_id_input.SetValue("")
+            # self.client_secret_input.SetValue("")

@@ -205,8 +205,12 @@ class SeriesService():
         :param series_id:
         :return:
         """
-        subquery = self._edit_session.query(DataValue.qualifier_id).outerjoin(
-                Series.data_values).filter(Series.id == series_id, DataValue.qualifier_id != None).distinct().subquery()
+        subquery = self._edit_session.query(DataValue.qualifier_id)\
+            .outerjoin(Series.data_values)\
+            .filter(Series.id == series_id, DataValue.qualifier_id != None)\
+            .distinct()\
+            .subquery()
+
         return self._edit_session.query(Qualifier).join(subquery).distinct().all()
 
     def get_qualifiers_by_series_details(self, site_id, qc_id, source_id, method_id, var_ids, year=None):
@@ -366,8 +370,8 @@ class SeriesService():
     def get_all_values_by_site_id(self, my_site_id):
         try:
             q = self._edit_session.query(DataValue, Variable.code).filter(DataValue.site_id == my_site_id,
-                                                                          DataValue.local_date_time >= first_date_time,
-                                                                          DataValue.local_date_time <= end_date_time,
+                                                                          # DataValue.local_date_time >= first_date_time,
+                                                                          # DataValue.local_date_time <= end_date_time,
                                                                           DataValue.variable_id == Variable.id,
                                                                           DataValue.quality_control_level_id == 0)
 
@@ -386,10 +390,12 @@ class SeriesService():
             if qc_id != 0 or len(var_ids) == 1 or len(method_ids) == 1:
                 query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
                                                        DataValue.utc_offset, DataValue.data_value,
-                                                       DataValue.qualifier_id, DataValue.censor_code, Variable.code)
+                                                       DataValue.qualifier_id, DataValue.censor_code, Variable.code,
+                                                       DataValue.method_id)
             else:
                 query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
-                                                       DataValue.utc_offset, DataValue.data_value, Variable.code)
+                                                       DataValue.utc_offset, DataValue.data_value, Variable.code,
+                                                       DataValue.method_id)
 
             if year is None and starting_date is None:
                 q = query_items.filter(DataValue.site_id == site_id, DataValue.variable_id.in_(var_ids),
@@ -498,8 +504,8 @@ class SeriesService():
                                                                    Series.variable_id == variable_id,
                                                                    Series.quality_control_level_id == qc_level_id,
                                                                    Series.source_id == source_id,
-                                                                   Series.method_id == method_id).first()
-            return query_result
+                                                                   Series.method_id == method_id)
+            return query_result.first()
         except Exception as e:
             print e
             return []

@@ -23,20 +23,36 @@ class Common:
         self.SKIP_QUERIES = True if '--skip_queries' in args else False         # Do not query data for CSV files
         self.SKIP_HYDROSHARE = True if '--skip_hydroshare' in args else False   # Do not modify HydroShare resources
 
+        self.IS_WINDOWS = 'nt' in os.name
+        self.APP_LOCAL = os.getenv('LOCALAPPDATA')
+        self.PROJECT_DIR = str(os.path.dirname(os.path.realpath(__file__)))      # Root project directory
+        # self.USER_APP_DIR = '{}/H2OUtility'.format(self.APP_LOCAL)
+        self.USER_APP_DIR = os.path.abspath(os.path.join(self.APP_LOCAL, 'H2OUtility'))
+        # self.DATASET_DIR = '{}/H2O_dataset_files/'.format(self.USER_APP_DIR)     # Directory for generated CSV files
+        self.DATASET_DIR = os.path.abspath(os.path.join(self.USER_APP_DIR, 'datasets'))  # Directory for generated CSV files
+        # self.LOGFILE_DIR = '{}/logs/'.format(self.USER_APP_DIR)                  # Directory for log files
+        self.LOGFILE_DIR = os.path.abspath(os.path.join(self.USER_APP_DIR, 'logs'))  # Directory for log files
+        self.GUI_MODE = False                                                    # If true, send logs to GUI
+
         """
         General constants and non-class variables
         """
-        settings_file = 'operations_file.json'                                  # Default settings file name
-        for item in args:
-            if '--settings_file=' in item:
-                settings_file = item.split('--settings_file=')[1]
+        op_file = 'operations_file.json'                                  # Default settings file name
+        if any("--operations-file" in item for item in args):
 
-        self.IS_WINDOWS = 'nt' in os.name
-        self.PROJECT_DIR = str(os.path.dirname(os.path.realpath(__file__)))     # Root project directory
-        self.SETTINGS_FILE_NAME = self.PROJECT_DIR + '/' + settings_file        # Settings file name
-        self.DATASET_DIR = '{}/H2O_dataset_files/'.format(self.PROJECT_DIR)     # Directory for generated CSV files
-        self.LOGFILE_DIR = '{}/logs/'.format(self.PROJECT_DIR)                  # Directory for log files
-        self.GUI_MODE = False                                                   # If true, send logs to GUI
+            op_fpath = [item for item in args if '--operations-file' in item][0] or ''
+            op_fpath = os.path.abspath(op_fpath.split('--operations-file=')[1])
+
+            if not os.path.isfile(op_fpath):
+                # If the operations file does not exist, create a new one with an empty dict
+                with open(op_fpath, 'w') as fout:
+                    fout.write('{}')
+
+            self.SETTINGS_FILE_NAME = op_fpath
+
+        else:
+            self.SETTINGS_FILE_NAME = os.path.join(self.USER_APP_DIR, op_file)  # Settings file name
+
 
         """
         H2O-specific constants
