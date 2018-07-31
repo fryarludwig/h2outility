@@ -159,11 +159,19 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
                                                          chunk_size=APP_SETTINGS.QUERY_CHUNK_SIZE,
                                                          timeout=APP_SETTINGS.DATAVALUES_TIMEOUT)
 
+    variables_len = len(variables)
+    methods_len = len(methods)
+
+    if variables_len < methods_len:
+        columns = ['MethodID', 'VariableCode']
+    else:
+        columns = 'VariableCode'
+
     if qc_id == 0 or len(variables) != 1 or len(methods) != 1:
         csv_table = pandas.pivot_table(dataframe,
                                        index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
-                                       columns=['VariableCode', 'MethodID'],
-                                       values=['DataValue'],
+                                       columns=columns,
+                                       values='DataValue',
                                        fill_value=series_list[0].variable.no_data_value)
         del dataframe
 
