@@ -390,10 +390,12 @@ class SeriesService():
             if qc_id != 0 or len(var_ids) == 1 or len(method_ids) == 1:
                 query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
                                                        DataValue.utc_offset, DataValue.data_value,
-                                                       DataValue.qualifier_id, DataValue.censor_code, Variable.code)
+                                                       DataValue.qualifier_id, DataValue.censor_code, Variable.code,
+                                                       DataValue.method_id)
             else:
                 query_items = self._edit_session.query(DataValue.date_time_utc, DataValue.local_date_time,
-                                                       DataValue.utc_offset, DataValue.data_value, Variable.code)
+                                                       DataValue.utc_offset, DataValue.data_value, Variable.code,
+                                                       DataValue.method_id)
 
             if year is None and starting_date is None:
                 q = query_items.filter(DataValue.site_id == site_id, DataValue.variable_id.in_(var_ids),

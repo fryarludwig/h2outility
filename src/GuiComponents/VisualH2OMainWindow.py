@@ -191,7 +191,7 @@ class VisualH2OWindow(wx.Frame):
             except HydroShareException as e:
 
                 msg = 'Request could not complete.'
-                if e.status_code == 400:
+                if getattr(e, 'status_code', None) == 400:
                     msg += "\n\nError 400: Bad request. Please try again..."
                 else:
                     msg += "\n\n{}".format(e.message)

@@ -162,8 +162,9 @@ def GetTimeSeriesDataframe(series_service, series_list, site_id, qc_id, source_i
     if qc_id == 0 or len(variables) != 1 or len(methods) != 1:
         csv_table = pandas.pivot_table(dataframe,
                                        index=["LocalDateTime", "UTCOffset", "DateTimeUTC"],
-                                       columns='VariableCode',
-                                       values='DataValue')
+                                       columns=['VariableCode', 'MethodID'],
+                                       values=['DataValue'],
+                                       fill_value=series_list[0].variable.no_data_value)
         del dataframe
 
     else:
